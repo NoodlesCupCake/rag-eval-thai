@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
-from fastapi import FastAPI, File, HTTPException, UploadFile  # noqa: E402
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile  # noqa: E402
 from fastapi.responses import FileResponse, Response  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 from pydantic import BaseModel, Field  # noqa: E402
@@ -52,7 +52,7 @@ def status():
     return {"llm_available": llm.available(), "default_model": llm.default_model(), "llm": llm.public_settings(),
             "device": device_name(),
             "strategies": STRATEGIES, "retrievers": RETRIEVER_TYPES, "suggested_models": SUGGESTED_MODELS,
-            "counts": {"documents": len(storage.list_documents()), "qa": len(storage.list_qa()),
+            "counts": {"documents": len(storage.list_documents()), "qa": storage.count_qa(), "qa_sets": len(storage.list_sets()),
                        "runs": len(storage.list_runs())}}
 
 
@@ -115,7 +115,7 @@ def preview_chunks(doc_id: str, req: PreviewReq):
 
 @app.post("/api/samples", tags=["documents"])
 def load_samples():
-    """Load the bundled Thai sample documents and their QA set."""
+    """Load the bundled Thai sample documents, and their questions into a QA set called ชุดตัวอย่าง."""
     existing = {d["name"] for d in storage.list_documents()}
     added_docs = []
     for p in sorted((storage.SAMPLES_DIR / "documents").glob("*.md")):
@@ -123,19 +123,62 @@ def load_samples():
             added_docs.append(storage.add_document(p.name, read_document_file(p.name, p.read_bytes())))
     docs = storage.list_documents(include_text=True)
     rows = parse_upload("qa.json", (storage.SAMPLES_DIR / "qa.json").read_bytes())
-    have = {q["question"] for q in storage.list_qa()}
+    sets = storage.list_sets()
+    # an empty first set (fresh install) becomes the sample set; otherwise use or make ชุดตัวอย่าง
+    target = next((st for st in sets if st["name"] == "ชุดตัวอย่าง"), None)
+    if not target and len(sets) == 1 and sets[0]["count"] == 0:
+        target = storage.rename_set(sets[0]["id"], "ชุดตัวอย่าง")
+    target = target or storage.create_set("ชุดตัวอย่าง")
+    have = {q["question"] for q in storage.list_qa(target["id"])}
     rows = [r for r in rows if r["question"] not in have]
     ok, errors = resolve_rows(rows, docs)
     for it in ok:
         it["source"] = "sample"
-    storage.add_qa(ok)
-    return {"documents": len(added_docs), "qa": len(ok), "errors": errors}
+    storage.add_qa(target["id"], ok)
+    return {"documents": len(added_docs), "qa": len(ok), "set": target["id"], "errors": errors}
+
+
+# ---------- QA sets ----------
+
+class SetIn(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+
+
+@app.get("/api/qa-sets", tags=["qa"])
+def qa_sets():
+    """All QA sets with their question counts."""
+    return storage.list_sets()
+
+
+@app.post("/api/qa-sets", tags=["qa"])
+def qa_set_create(body: SetIn, copy_from: str | None = None):
+    """Create an empty set, or a copy of another set with copy_from=<set id>."""
+    st = storage.create_set(body.name)
+    if copy_from:
+        items = [q | {"id": storage.new_id("qa")} for q in storage.list_qa(copy_from)]
+        storage.save_qa(st["id"], items)
+    return storage.get_set(st["id"])
+
+
+@app.patch("/api/qa-sets/{set_id}", tags=["qa"])
+def qa_set_rename(set_id: str, body: SetIn):
+    st = storage.rename_set(set_id, body.name)
+    if not st:
+        raise HTTPException(404, "ไม่พบชุดคำถาม")
+    return st
+
+
+@app.delete("/api/qa-sets/{set_id}", tags=["qa"])
+def qa_set_delete(set_id: str):
+    if not storage.delete_set(set_id):
+        raise HTTPException(400, "ลบไม่ได้ ต้องเหลืออย่างน้อย 1 ชุด")
+    return {"ok": True}
 
 
 # ---------- QA ----------
 
 @app.get("/api/qa", tags=["qa"])
-def qa_list(strategy: str | None = None, size: int = 400, overlap: int = 0):
+def qa_list(strategy: str | None = None, size: int = 400, overlap: int = 0, qa_set: str | None = Query(None, alias="set", description="QA set id (default: the first set)")):
     """The QA set. With a chunking config, each item also lists the chunks its evidence
     falls in under that config (numbers match the document page's chunk preview)."""
     docs = {d["id"]: d for d in storage.list_documents(include_text=True)}
@@ -143,7 +186,7 @@ def qa_list(strategy: str | None = None, size: int = 400, overlap: int = 0):
         raise HTTPException(400, f"unknown strategy {strategy}")
     chunked = {i: chunk_text(i, d["text"], strategy, size, overlap) for i, d in docs.items()} if strategy else {}
     out = []
-    for q in storage.list_qa():
+    for q in storage.list_qa(qa_set):
         ev = q["evidence"][0]
         d = docs.get(ev["doc_id"])
         item = q | {"doc_name": d["name"] if d else None,
@@ -163,13 +206,13 @@ class QAIn(BaseModel):
 
 
 @app.post("/api/qa", tags=["qa"])
-def qa_add(item: QAIn):
+def qa_add(item: QAIn, qa_set: str | None = Query(None, alias="set", description="QA set id (default: the first set)")):
     docs = storage.list_documents(include_text=True)
     pool = [d for d in docs if d["id"] == item.document_id] or docs
     ev = locate_evidence(item.evidence, pool)
     if not ev:
         raise HTTPException(400, "หาข้อความ evidence ในเอกสารไม่เจอ ต้องคัดลอกมาจากเอกสารตรงตัว")
-    return storage.add_qa([{"question": item.question.strip(), "answer": item.answer.strip(),
+    return storage.add_qa(qa_set, [{"question": item.question.strip(), "answer": item.answer.strip(),
                             "evidence": [ev], "source": "manual"}])[0]
 
 
@@ -179,42 +222,42 @@ class QAPatch(BaseModel):
 
 
 @app.patch("/api/qa/{qa_id}", tags=["qa"])
-def qa_update(qa_id: str, patch: QAPatch):
-    items = storage.list_qa()
+def qa_update(qa_id: str, patch: QAPatch, qa_set: str | None = Query(None, alias="set", description="QA set id (default: the first set)")):
+    items = storage.list_qa(qa_set)
     for it in items:
         if it["id"] == qa_id:
             it.update({k: v.strip() for k, v in patch.model_dump().items() if v is not None})
-            storage.save_qa(items)
+            storage.save_qa(qa_set, items)
             return it
     raise HTTPException(404, "ไม่พบคำถาม")
 
 
 @app.delete("/api/qa/{qa_id}", tags=["qa"])
-def qa_delete(qa_id: str):
-    items = storage.list_qa()
-    storage.save_qa([q for q in items if q["id"] != qa_id])
+def qa_delete(qa_id: str, qa_set: str | None = Query(None, alias="set", description="QA set id (default: the first set)")):
+    items = storage.list_qa(qa_set)
+    storage.save_qa(qa_set, [q for q in items if q["id"] != qa_id])
     return {"ok": True}
 
 
 @app.delete("/api/qa", tags=["qa"])
-def qa_clear():
-    storage.save_qa([])
+def qa_clear(qa_set: str | None = Query(None, alias="set", description="QA set id (default: the first set)")):
+    storage.save_qa(qa_set, [])
     return {"ok": True}
 
 
 @app.post("/api/qa/import", tags=["qa"])
-async def qa_import(file: UploadFile = File(...), mode: str = "merge"):
+async def qa_import(file: UploadFile = File(...), mode: str = "merge", qa_set: str | None = Query(None, alias="set", description="QA set id (default: the first set)")):
     """Starts a background import job; poll /api/jobs/{id} for progress."""
     if not file.filename.lower().endswith((".xlsx", ".xlsm", ".csv", ".json")):
         raise HTTPException(400, "รองรับ .xlsx .csv และ .json")
     if mode not in ("merge", "replace"):
         raise HTTPException(400, "mode ต้องเป็น merge หรือ replace")
-    return runner.start_import(file.filename, await file.read(), mode)
+    return runner.start_import(file.filename, await file.read(), mode, storage.resolve_set(qa_set))
 
 
 @app.get("/api/qa/export", tags=["qa"])
-def qa_export(format: str = "json"):
-    items = storage.list_qa()
+def qa_export(format: str = "json", qa_set: str | None = Query(None, alias="set", description="QA set id (default: the first set)")):
+    items = storage.list_qa(qa_set)
     if format == "xlsx":
         docs = {d["id"]: d for d in storage.list_documents(include_text=True)}
         return Response(export_xlsx(items, docs),
@@ -241,13 +284,14 @@ class GenerateReq(BaseModel):
     passage_chars: int = Field(800, ge=200, le=4000)
     max_questions: int = Field(30, ge=1, le=500)
     model: str | None = None
+    set: str | None = None
 
 
 @app.post("/api/qa/generate", tags=["qa"])
 def qa_generate(req: GenerateReq):
     try:
         return runner.start_generate(req.document_ids, req.per_passage, req.passage_chars,
-                                     req.max_questions, req.model or None)
+                                     req.max_questions, req.model or None, storage.resolve_set(req.set))
     except ValueError as e:
         raise HTTPException(400, str(e))
 
@@ -326,6 +370,7 @@ class RunReq(BaseModel):
     retrievers: list[RetrieverCfg] = Field(min_length=1)
     k_max: int = Field(10, ge=1, le=20)
     sample: int | None = None
+    qa_set: str | None = None
     generation: GenCfg = GenCfg()
 
 

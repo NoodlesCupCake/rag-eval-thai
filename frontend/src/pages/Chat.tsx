@@ -27,7 +27,8 @@ export function ChatPage() {
   const [q, setQ] = useState("");
   const [turns, setTurns] = useState<Turn[]>([]);
   const end = useRef<HTMLDivElement>(null);
-  useEffect(() => end.current?.scrollIntoView({ block: "end", behavior: "smooth" }), [turns]);
+  // braces matter: scrollIntoView returns a Promise in current browsers, and an effect must return nothing or a cleanup
+  useEffect(() => { end.current?.scrollIntoView({ block: "end", behavior: "smooth" }); }, [turns]);
 
   const cfgLabel = `${chunking.strategy}·${chunking.size}${chunking.overlap ? `/${chunking.overlap}` : ""} · ${retriever.type === "bm25" ? "bm25" : `${retriever.type}:${retriever.model.split("/").pop()}`}`;
 

@@ -45,7 +45,9 @@ def _update(j: dict, **kw) -> None:
 # ---------- benchmark ----------
 
 def start_run(spec: dict) -> dict:
-    qa = storage.list_qa()
+    set_id = storage.resolve_set(spec.get("qa_set"))
+    qa_set = storage.get_set(set_id)
+    qa = storage.list_qa(set_id)
     docs = storage.list_documents(include_text=True)
     if not qa:
         raise ValueError("ยังไม่มีชุดคำถาม เพิ่มคำถามก่อนรัน")
@@ -65,6 +67,7 @@ def start_run(spec: dict) -> dict:
     run = {"id": storage.new_id("run"), "name": spec.get("name") or time.strftime("Run %d %b %H:%M"),
            "status": "running", "created_at": storage.now(), "finished_at": None, "spec": spec,
            "n_questions": len(qa), "results": [], "error": None,
+           "qa_set": {"id": set_id, "name": qa_set["name"] if qa_set else set_id},
            "doc_names": {d["id"]: d["name"] for d in docs},
            "questions": {q["id"]: {k: q[k] for k in ("question", "answer", "evidence")} for q in qa}}
     storage.save_run(run)
@@ -147,7 +150,7 @@ def _generate(per_q, qa, gen):
 
 # ---------- QA generation ----------
 
-def start_generate(doc_ids: list[str], per_passage: int, passage_chars: int, max_questions: int, model: str) -> dict:
+def start_generate(doc_ids: list[str], per_passage: int, passage_chars: int, max_questions: int, model: str | None, set_id: str) -> dict:
     if not llm.available():
         raise ValueError("ตั้งค่า LLM ในหน้าตั้งค่าก่อนสร้างคำถามอัตโนมัติ")
     docs = [d for d in storage.list_documents(include_text=True) if not doc_ids or d["id"] in doc_ids]
@@ -159,11 +162,11 @@ def start_generate(doc_ids: list[str], per_passage: int, passage_chars: int, max
     random.Random(1).shuffle(passages)
     passages = passages[: max(1, -(-max_questions // per_passage))]
     job = _job("generate", len(passages), "สร้างคำถามด้วย LLM")
-    threading.Thread(target=_generate_qa, args=(job, passages, per_passage, max_questions, model), daemon=True).start()
+    threading.Thread(target=_generate_qa, args=(job, passages, per_passage, max_questions, model, set_id), daemon=True).start()
     return job
 
 
-def _generate_qa(job, passages, per_passage, max_questions, model):
+def _generate_qa(job, passages, per_passage, max_questions, model, set_id):
     added, dropped = [], 0
     lock = threading.Lock()
 
@@ -188,7 +191,7 @@ def _generate_qa(job, passages, per_passage, max_questions, model):
     try:
         with ThreadPoolExecutor(max_workers=4) as pool:
             list(pool.map(work, passages))
-        storage.add_qa(added)
+        storage.add_qa(set_id, added)
         _update(job, status="done", result={"added": len(added), "dropped": dropped},
                 message=f"เพิ่ม {len(added)} คำถาม" + (f" · ตัดทิ้ง {dropped} ข้อที่หา evidence ในเอกสารไม่เจอ" if dropped else ""))
     except Exception as e:
@@ -198,15 +201,15 @@ def _generate_qa(job, passages, per_passage, max_questions, model):
 
 # ---------- QA import ----------
 
-def start_import(filename: str, raw: bytes, mode: str) -> dict:
+def start_import(filename: str, raw: bytes, mode: str, set_id: str) -> dict:
     """Import a QA file in the background. mode = "merge" updates rows whose id exists and
     adds the rest; "replace" makes the file the whole QA set."""
     job = _job("import", 0, f"นำเข้า {filename}")
-    threading.Thread(target=_import, args=(job, filename, raw, mode), daemon=True).start()
+    threading.Thread(target=_import, args=(job, filename, raw, mode, set_id), daemon=True).start()
     return job
 
 
-def _import(job, filename, raw, mode):
+def _import(job, filename, raw, mode, set_id):
     try:
         _update(job, message="กำลังอ่านไฟล์")
         rows = parse_upload(filename, raw)
@@ -220,7 +223,7 @@ def _import(job, filename, raw, mode):
             _update(job, done=job["done"] + 1)
 
         _update(job, message="กำลังบันทึก")
-        current = storage.list_qa()
+        current = storage.list_qa(set_id)
         by_id = {q["id"]: q for q in current}
         added = updated = 0
         if mode == "replace":
@@ -235,7 +238,7 @@ def _import(job, filename, raw, mode):
                     it.pop("id", None)
                     new.append(it | {"id": storage.new_id("qa"), "created_at": storage.now()})
             removed = len(current) - updated
-            storage.save_qa(new)
+            storage.save_qa(set_id, new)
         else:
             fresh = []
             for it in ok:
@@ -247,8 +250,8 @@ def _import(job, filename, raw, mode):
                     added += 1
                     it.pop("id", None)
                     fresh.append(it)
-            storage.save_qa(current)
-            storage.add_qa(fresh)
+            storage.save_qa(set_id, current)
+            storage.add_qa(set_id, fresh)
             removed = 0
         parts = [f"เพิ่ม {added}", f"อัปเดต {updated}"] + ([f"ลบ {removed}"] if removed else []) + ([f"ข้อผิดพลาด {len(errors)}"] if errors else [])
         _update(job, status="done", message=" · ".join(parts),

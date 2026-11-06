@@ -12,11 +12,14 @@ ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = ROOT / "data"
 DOCS_DIR = DATA_DIR / "documents"
 RUNS_DIR = DATA_DIR / "runs"
-QA_FILE = DATA_DIR / "qa.json"
+QA_FILE = DATA_DIR / "qa.json"          # before QA sets existed; migrated on start
+QA_DIR = DATA_DIR / "qa"
+SETS_FILE = DATA_DIR / "qa_sets.json"
+DEFAULT_SET = "set_main"
 SETTINGS_FILE = DATA_DIR / "settings.json"
 SAMPLES_DIR = ROOT / "samples"
 
-for d in (DOCS_DIR, RUNS_DIR):
+for d in (DOCS_DIR, RUNS_DIR, QA_DIR):
     d.mkdir(parents=True, exist_ok=True)
 
 _lock = threading.RLock()
@@ -73,32 +76,102 @@ def delete_document(doc_id: str) -> bool:
             return False
         path.unlink()
         # QA items whose evidence lived in this document no longer have ground truth.
-        items = [q for q in list_qa() if all(e["doc_id"] != doc_id for e in q["evidence"])]
-        _write(QA_FILE, items)
+        for st in list_sets():
+            items = [q for q in list_qa(st["id"]) if all(e["doc_id"] != doc_id for e in q["evidence"])]
+            save_qa(st["id"], items)
     return True
 
 
-# ---------- QA set ----------
+# ---------- QA sets ----------
+# Each set is its own file under data/qa/, so sets stay independent and easy to share.
 
-def list_qa() -> list[dict]:
+def _migrate() -> None:
     with _lock:
-        return _read(QA_FILE, [])
+        if SETS_FILE.exists():
+            return
+        sets = [{"id": DEFAULT_SET, "name": "ชุดหลัก", "created_at": now()}]
+        if QA_FILE.exists():
+            _write(QA_DIR / f"{DEFAULT_SET}.json", _read(QA_FILE, []))
+            QA_FILE.rename(QA_FILE.with_suffix(".json.migrated"))
+        _write(SETS_FILE, sets)
 
 
-def save_qa(items: list[dict]) -> None:
+def list_sets() -> list[dict]:
+    _migrate()
     with _lock:
-        _write(QA_FILE, items)
+        sets = _read(SETS_FILE, [])
+    return [st | {"count": len(_read(QA_DIR / f"{st['id']}.json", []))} for st in sets]
 
 
-def add_qa(items: list[dict]) -> list[dict]:
+def get_set(set_id: str) -> dict | None:
+    return next((st for st in list_sets() if st["id"] == set_id), None)
+
+
+def create_set(name: str) -> dict:
+    _migrate()
+    st = {"id": new_id("set"), "name": name.strip() or "ชุดใหม่", "created_at": now()}
     with _lock:
-        current = list_qa()
+        _write(SETS_FILE, _read(SETS_FILE, []) + [st])
+        _write(QA_DIR / f"{st['id']}.json", [])
+    return st | {"count": 0}
+
+
+def find_or_create_set(name: str) -> dict:
+    return next((st for st in list_sets() if st["name"] == name), None) or create_set(name)
+
+
+def rename_set(set_id: str, name: str) -> dict | None:
+    with _lock:
+        sets = _read(SETS_FILE, [])
+        for st in sets:
+            if st["id"] == set_id:
+                st["name"] = name.strip() or st["name"]
+                _write(SETS_FILE, sets)
+                return get_set(set_id)
+    return None
+
+
+def delete_set(set_id: str) -> bool:
+    with _lock:
+        sets = _read(SETS_FILE, [])
+        if len(sets) <= 1 or not any(st["id"] == set_id for st in sets):
+            return False
+        _write(SETS_FILE, [st for st in sets if st["id"] != set_id])
+        (QA_DIR / f"{set_id}.json").unlink(missing_ok=True)
+    return True
+
+
+def resolve_set(set_id: str | None) -> str:
+    """The set to use: the given one, else the first set."""
+    sets = list_sets()
+    if set_id and any(st["id"] == set_id for st in sets):
+        return set_id
+    return sets[0]["id"]
+
+
+def list_qa(set_id: str | None = None) -> list[dict]:
+    with _lock:
+        return _read(QA_DIR / f"{resolve_set(set_id)}.json", [])
+
+
+def save_qa(set_id: str | None, items: list[dict]) -> None:
+    with _lock:
+        _write(QA_DIR / f"{resolve_set(set_id)}.json", items)
+
+
+def add_qa(set_id: str | None, items: list[dict]) -> list[dict]:
+    with _lock:
+        current = list_qa(set_id)
         for it in items:
             it.setdefault("id", new_id("qa"))
             it.setdefault("created_at", now())
         current.extend(items)
-        _write(QA_FILE, current)
+        save_qa(set_id, current)
     return items
+
+
+def count_qa() -> int:
+    return sum(st["count"] for st in list_sets())
 
 
 # ---------- runs ----------
@@ -120,7 +193,7 @@ def list_runs() -> list[dict]:
     for r in runs:
         if not r:
             continue
-        out.append({k: r.get(k) for k in ("id", "name", "status", "created_at", "finished_at", "n_questions", "error")}
+        out.append({k: r.get(k) for k in ("id", "name", "status", "created_at", "finished_at", "n_questions", "error", "qa_set")}
                    | {"n_configs": len(r.get("results", [])), "summary": [res["metrics"] | {"label": res["label"]} for res in r.get("results", [])]})
     out.sort(key=lambda r: r["created_at"], reverse=True)
     return out

@@ -48,7 +48,7 @@ export function RunsPage() {
               <thead>
                 <tr>
                   <th style={{ width: 40 }} />
-                  <th>รอบ</th><th>สถานะ</th><th className="num">configs</th><th className="num">คำถาม</th>
+                  <th>รอบ</th><th>ชุดคำถาม</th><th>สถานะ</th><th className="num">configs</th><th className="num">คำถาม</th>
                   <th>config ที่ดีที่สุด</th><th className="num">Hit@3</th><th className="num">MRR</th><th />
                 </tr>
               </thead>
@@ -62,6 +62,7 @@ export function RunsPage() {
                                checked={picked.includes(r.id)} onChange={() => pick(r.id)} />
                       </td>
                       <td><div style={{ color: "var(--text)" }}>{r.name}</div><div className="meta">{date(r.created_at)}</div></td>
+                      <td className="small">{r.qa_set?.name ?? "–"}</td>
                       <td className="small">{STATUS[r.status] ?? r.status}</td>
                       <td className="num">{r.n_configs}</td>
                       <td className="num">{r.n_questions}</td>

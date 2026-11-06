@@ -357,6 +357,15 @@ tr.lead .dist i.first { background: var(--accent); }
 .diagram .d-miss { fill: none; stroke: var(--negative); stroke-width: 1.5; stroke-dasharray: 4 3; }
 .diagram .d-guide { stroke: var(--accent); stroke-opacity: 0.35; stroke-dasharray: 2 3; }
 
+/* ---------- QA set tabs ---------- */
+.set-picker { overflow: hidden; }
+.set-tabs { display: flex; gap: 2px; padding: 8px 12px 0; overflow-x: auto; border-bottom: 1px solid var(--line); }
+.set-tab { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px; border: 0; border-radius: 8px 8px 0 0; background: transparent; color: var(--text-2); cursor: pointer; white-space: nowrap; box-shadow: inset 0 -2px 0 transparent; transition: color 150ms var(--ease), background-color 150ms var(--ease), box-shadow 150ms var(--ease); }
+.set-tab:hover { color: var(--text); background: var(--raised); }
+.set-tab.on { color: var(--text); box-shadow: inset 0 -2px 0 var(--accent); }
+.set-tab.add { color: var(--muted); }
+.set-actions { display: flex; align-items: center; gap: 8px; padding: 8px 16px; min-height: 48px; flex-wrap: wrap; }
+
 @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 .enter { animation: rise 400ms var(--ease) both; }
 

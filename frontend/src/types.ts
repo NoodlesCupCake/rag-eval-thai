@@ -43,6 +43,13 @@ export interface QA {
   chunks?: { id: string; doc_id: string; number: number }[];
 }
 
+export interface QASet {
+  id: string;
+  name: string;
+  count: number;
+  created_at: number;
+}
+
 export type Provider = "anthropic" | "openai";
 
 export interface LLMSettings {
@@ -80,7 +87,7 @@ export interface Status {
   strategies: string[];
   retrievers: string[];
   suggested_models: { id: string; note: string }[];
-  counts: { documents: number; qa: number; runs: number };
+  counts: { documents: number; qa: number; qa_sets?: number; runs: number };
 }
 
 export interface Job {
@@ -155,6 +162,7 @@ export interface Run {
     generation?: { enabled: boolean; top_k: number; model: string | null };
   };
   n_questions: number;
+  qa_set?: { id: string; name: string };
   results: Result[];
   error: string | null;
   doc_names: Record<string, string>;
@@ -173,5 +181,6 @@ export interface RunSummary {
   created_at: number;
   n_configs: number;
   n_questions: number;
+  qa_set?: { id: string; name: string };
   summary: SummaryRow[];
 }

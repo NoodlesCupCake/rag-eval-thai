@@ -39,7 +39,7 @@ export function RunDetailPage() {
   return (
     <div className="stack">
       <PageHead back={{ to: "/runs", label: "ผลลัพธ์ทั้งหมด" }} title={run.name}
-                sub={<span className="mono small">{date(run.created_at)} · {run.n_questions} คำถาม · {results.length}/{total} configs{run.status === "running" ? " · กำลังรัน" : ""}</span>} />
+                sub={<span className="mono small">{date(run.created_at)} · {run.qa_set ? `${run.qa_set.name} · ` : ""}{run.n_questions} คำถาม · {results.length}/{total} configs{run.status === "running" ? " · กำลังรัน" : ""}</span>} />
       {run.error && <ErrorNote error={"รันไม่สำเร็จ: " + run.error} />}
       {results.length === 0 ? (
         <div className="card">

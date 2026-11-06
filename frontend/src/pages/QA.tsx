@@ -5,7 +5,8 @@ import { Download, Plus, Search, Trash2, Upload, X } from "lucide-react";
 import { api, errorText } from "../api";
 import { Busy, useAction, useFeedback } from "../feedback";
 import { useStatus } from "../status";
-import type { ChunkCfg, Doc, Job, QA } from "../types";
+import type { ChunkCfg, Doc, Job, QA, QASet } from "../types";
+import { SetPicker } from "../components/SetPicker";
 import { Empty, ErrorNote, JobProgress, PageHead } from "../components/ui";
 
 type Panel = null | "add" | "generate";
@@ -20,8 +21,19 @@ export function QAPage() {
   const [query, setQuery] = useState("");
   const [params, setParams] = useSearchParams();
   const view = params.get("view") === "map" ? "map" : "table";
-  const setView = (v: "table" | "map") => setParams(v === "map" ? { view: "map" } : {}, { replace: true });
+  const setView = (v: "table" | "map") => {
+    const next = new URLSearchParams(params);
+    if (v === "map") next.set("view", "map"); else next.delete("view");
+    setParams(next, { replace: true });
+  };
   const [cfg, setCfg] = useState<ChunkCfg>({ strategy: "recursive", size: 400, overlap: 50 });
+  const [sets, setSets] = useState<QASet[]>([]);
+  const setId = params.get("set") ?? sets[0]?.id ?? "";
+  const current = sets.find((x) => x.id === setId);
+  const q = `set=${encodeURIComponent(setId)}`;
+  const loadSets = () => api.get<QASet[]>("/qa-sets").then(setSets);
+  useEffect(() => { loadSets(); }, []);
+  const chooseSet = (id: string) => setParams({ ...(view === "map" ? { view: "map" } : {}), set: id }, { replace: true });
   const fileRef = useRef<HTMLInputElement>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [importJob, setImportJob] = useState<Job | null>(null);
@@ -29,23 +41,23 @@ export function QAPage() {
   const { run, busy } = useAction();
 
   const load = () =>
-    api.get<QA[]>(`/qa?strategy=${cfg.strategy}&size=${cfg.size}&overlap=${cfg.overlap}`).then(setItems).catch((e) => setError(errorText(e)));
-  const reload = () => { load(); refresh(); };
+    setId ? api.get<QA[]>(`/qa?${q}&strategy=${cfg.strategy}&size=${cfg.size}&overlap=${cfg.overlap}`).then(setItems).catch((e) => setError(errorText(e))) : Promise.resolve();
+  const reload = () => { load(); loadSets(); refresh(); };
   useEffect(() => { api.get<Doc[]>("/documents").then(setDocs); }, []);
   useEffect(() => {
     const t = setTimeout(load, 200);
     return () => clearTimeout(t);
-  }, [cfg.strategy, cfg.size, cfg.overlap]);
+  }, [cfg.strategy, cfg.size, cfg.overlap, setId]);
   const docName = (id: string) => docs.find((d) => d.id === id)?.name ?? "";
   const chunkHref = (docId: string, n: number) =>
     `/documents/${docId}?strategy=${cfg.strategy}&size=${cfg.size}&overlap=${cfg.overlap}&chunk=${n}`;
 
   // Imports run as a background job; the tray shows progress, this page shows the result.
   async function importFile(f: File, mode: "merge" | "replace") {
-    if (mode === "replace" && items?.length && !confirm(`แทนที่คำถามทั้งหมด ${items.length} ข้อด้วยไฟล์นี้? คำถามที่ไม่อยู่ในไฟล์จะถูกลบ`)) return;
+    if (mode === "replace" && items?.length && !confirm(`แทนที่คำถามทั้งหมด ${items.length} ข้อในชุด “${current?.name}” ด้วยไฟล์นี้? คำถามที่ไม่อยู่ในไฟล์จะถูกลบ`)) return;
     setPendingFile(null);
     setNote(null);
-    const job = await run("import", () => api.upload<Job>(`/qa/import?mode=${mode}`, [f], "file"));
+    const job = await run("import", () => api.upload<Job>(`/qa/import?mode=${mode}&${q}`, [f], "file"));
     if (!job) return;
     setImportJob(job);
     track(job, (done) => {
@@ -58,18 +70,18 @@ export function QAPage() {
 
   async function remove(id: string) {
     setItems((xs) => xs?.filter((q) => q.id !== id) ?? xs); // show it gone right away
-    const ok = await run("del:" + id, () => api.del("/qa/" + id), "ลบคำถามแล้ว");
+    const ok = await run("del:" + id, () => api.del(`/qa/${id}?${q}`), "ลบคำถามแล้ว");
     if (ok === undefined) load();
     refresh();
   }
   async function clearAll() {
     if (!items || !confirm(`ลบคำถามทั้งหมด ${items.length} ข้อ?`)) return;
     setItems([]);
-    await run("clear", () => api.del("/qa"), "ลบคำถามทั้งหมดแล้ว");
+    await run("clear", () => api.del(`/qa?${q}`), "ลบคำถามทั้งหมดแล้ว");
     reload();
   }
   function download(format: "xlsx" | "csv") {
-    window.location.href = `/api/qa/export?format=${format}`;
+    window.location.href = `/api/qa/export?format=${format}&${q}`;
     toast(format === "xlsx" ? "กำลังดาวน์โหลด qa.xlsx" : "กำลังดาวน์โหลด qa.csv", "info");
   }
 
@@ -89,10 +101,11 @@ export function QAPage() {
         <input ref={fileRef} type="file" accept=".xlsx,.csv,.json" hidden
                onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) setPendingFile(f); }} />
       </PageHead>
+      <SetPicker sets={sets} current={setId} onChoose={chooseSet} onChanged={(id) => { loadSets(); if (id) chooseSet(id); refresh(); }} />
       <ErrorNote error={error} />
       {pendingFile && (
         <div className="card card-pad import-bar enter">
-          <span className="grow">นำเข้า <span className="mono">{pendingFile.name}</span> แถวที่มี id ตรงกับคำถามเดิมจะถูกอัปเดต แถวที่ใส่ use = no จะถูกข้าม</span>
+          <span className="grow">นำเข้า <span className="mono">{pendingFile.name}</span> เข้าชุด “{current?.name}” แถวที่มี id ตรงกับคำถามเดิมจะถูกอัปเดต แถวที่ใส่ use = no จะถูกข้าม</span>
           <button className="btn primary" onClick={() => importFile(pendingFile, "merge")}>รวมกับชุดเดิม</button>
           <button className="btn" onClick={() => importFile(pendingFile, "replace")}>แทนที่ทั้งชุด</button>
           <button className="btn ghost icon-only" aria-label="ยกเลิก" onClick={() => setPendingFile(null)}><X className="icon" /></button>
@@ -105,8 +118,8 @@ export function QAPage() {
         </div>
       )}
       {note && <div className="notice">{note}</div>}
-      {panel === "add" && <AddQA docs={docs} onDone={() => { setPanel(null); reload(); }} />}
-      {panel === "generate" && <GenerateQA docs={docs} onDone={(m) => { setNote(m); reload(); }} />}
+      {panel === "add" && <AddQA docs={docs} setQuery={q} onDone={() => { setPanel(null); reload(); }} />}
+      {panel === "generate" && <GenerateQA docs={docs} setId={setId} onDone={(m) => { setNote(m); reload(); }} />}
 
       <div className="card">
         <div className="card-head" style={{ alignItems: "center" }}>
@@ -174,7 +187,7 @@ export function QAPage() {
   );
 }
 
-function AddQA({ docs, onDone }: { docs: Doc[]; onDone: () => void }) {
+function AddQA({ docs, setQuery, onDone }: { docs: Doc[]; setQuery: string; onDone: () => void }) {
   const [f, setF] = useState({ question: "", answer: "", evidence: "", document_id: "" });
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -185,7 +198,7 @@ function AddQA({ docs, onDone }: { docs: Doc[]; onDone: () => void }) {
     setError(null);
     setSaving(true);
     try {
-      await api.post("/qa", { ...f, document_id: f.document_id || null });
+      await api.post(`/qa?${setQuery}`, { ...f, document_id: f.document_id || null });
       toast("เพิ่มคำถามแล้ว");
       onDone();
     } catch (e) {
@@ -219,7 +232,7 @@ function AddQA({ docs, onDone }: { docs: Doc[]; onDone: () => void }) {
   );
 }
 
-function GenerateQA({ docs, onDone }: { docs: Doc[]; onDone: (msg: string) => void }) {
+function GenerateQA({ docs, setId, onDone }: { docs: Doc[]; setId: string; onDone: (msg: string) => void }) {
   const { status } = useStatus();
   const [f, setF] = useState({ max_questions: 20, per_passage: 2, passage_chars: 800 });
   const [picked, setPicked] = useState<string[]>([]);
@@ -234,7 +247,7 @@ function GenerateQA({ docs, onDone }: { docs: Doc[]; onDone: (msg: string) => vo
 
   async function start() {
     setError(null);
-    const j = await run("gen", () => api.post<Job>("/qa/generate", { ...f, document_ids: picked }));
+    const j = await run("gen", () => api.post<Job>("/qa/generate", { ...f, document_ids: picked, set: setId }));
     if (!j) return;
     setJobId(j.id);
     track(j, (done) => onDone(done.message)); // keeps running in the background if you leave the page

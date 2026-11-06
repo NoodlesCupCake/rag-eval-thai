@@ -1,10 +1,10 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Play, Plus, X } from "lucide-react";
 import { api } from "../api";
 import { Busy, useAction, useFeedback } from "../feedback";
 import { useStatus } from "../status";
-import type { ChunkCfg, Job } from "../types";
+import type { ChunkCfg, Job, QASet } from "../types";
 import { num } from "../format";
 import { ErrorNote, JobProgress, PageHead } from "../components/ui";
 import { Term } from "../components/Term";
@@ -37,7 +37,10 @@ export function BenchPage() {
   const { run: act, busy } = useAction();
   const job: Job | null = jobs.find((j) => j.id === jobId) ?? null;
 
-  const nq = status?.counts.qa ?? 0;
+  const [sets, setSets] = useState<QASet[]>([]);
+  const [setId, setSetId] = useState("");
+  useEffect(() => { api.get<QASet[]>("/qa-sets").then((s) => { setSets(s); setSetId((cur) => cur || s[0]?.id || ""); }); }, []);
+  const nq = sets.find((s) => s.id === setId)?.count ?? 0;
   const nUsed = sample ? Math.min(Number(sample), nq) : nq;
   const nConfigs = chunks.length * rets.length;
   const running = busy("run") || job?.status === "running";
@@ -51,6 +54,7 @@ export function BenchPage() {
         chunkings: chunks,
         retrievers: rets.map((r) => ({ type: r.type, model: r.type === "bm25" ? null : r.model })),
         k_max: kMax,
+        qa_set: setId || null,
         sample: sample ? Number(sample) : null,
         generation: gen,
       }));
@@ -113,6 +117,11 @@ export function BenchPage() {
         </div>
 
         <div className="card card-pad stack-16" style={{ position: "sticky", top: 32 }}>
+          <label className="field"><span>ชุดคำถาม</span>
+            <select className="input" value={setId} onChange={(e) => setSetId(e.target.value)}>
+              {sets.map((s) => <option key={s.id} value={s.id}>{s.name} · {s.count} ข้อ</option>)}
+            </select>
+          </label>
           <label className="field"><span>ชื่อรอบนี้</span><input className="input" placeholder="ลองขนาด 400" value={name} onChange={(e) => setName(e.target.value)} /></label>
           <div className="form-grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
             <label className="field"><span><Term k="k_max">k สูงสุด</Term></span><input className="input mono" type="number" min={1} max={20} value={kMax} onChange={(e) => setKMax(Number(e.target.value))} /></label>
