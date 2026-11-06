@@ -8,6 +8,7 @@ import { num } from "../format";
 import { Empty, ErrorNote, PageHead } from "../components/ui";
 import { Busy, useAction, useFeedback } from "../feedback";
 import type { Job } from "../types";
+import { Sk, SkRows } from "../components/Skeleton";
 
 export function DocumentsPage() {
   const { id } = useParams();
@@ -59,6 +60,12 @@ export function DocumentsPage() {
       </PageHead>
       <ErrorNote error={error} />
 
+      {!docs && !error && (
+        <div className="docs-layout">
+          <div className="card"><SkRows rows={3} cols={[70, 30]} /></div>
+          <div className="card card-pad stack-16"><Sk w="40%" h={16} /><Sk h={36} r={8} />{[90, 96, 80, 94, 70].map((w, i) => <Sk key={i} w={`${w}%`} h={12} />)}</div>
+        </div>
+      )}
       {docs && docs.length === 0 && (
         <div className="card">
           <Empty title="ยังไม่มีเอกสาร">
@@ -178,6 +185,7 @@ function ChunkPreviewCard({ id }: { id: string }) {
       </div>
       <ErrorNote error={error} />
       <div className="page">
+        {!res && <div className="stack-8">{[92, 98, 85, 96, 60, 94, 88].map((w, i) => <Sk key={i} w={`${w}%`} h={14} />)}</div>}
         <div className="page-text">
           {parts.map((p) =>
             p.mark ? (

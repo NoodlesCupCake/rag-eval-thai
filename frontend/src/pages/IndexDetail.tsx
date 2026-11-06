@@ -7,6 +7,7 @@ import { Busy, useAction } from "../feedback";
 import { date, ms } from "../format";
 import { ErrorNote, PageHead } from "../components/ui";
 import { shortModel, type IndexMeta } from "./Indexes";
+import { PageSkeleton } from "../components/Skeleton";
 
 /* One index from the store: every chunk on an x/y map coloured by document, a search
    box that drops the query onto the map with lines to its nearest chunks, and a panel
@@ -48,7 +49,7 @@ export function IndexDetailPage() {
   }, [sel, id]);
 
   if (error) return <ErrorNote error={error} />;
-  if (!idx) return <div className="muted">กำลังโหลด</div>;
+  if (!idx) return <PageSkeleton variant="map" />;
 
   const byId = new Map(idx.chunks.map((c) => [c.id, c]));
   const docIndex = new Map(idx.docs.map((d, i) => [d.id, i]));

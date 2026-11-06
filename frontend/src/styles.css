@@ -566,6 +566,18 @@ tbody tr.clickable.lead:hover td:first-child { box-shadow: inset 2px 0 0 var(--a
 .idx-query text { fill: var(--text); font: 500 12px var(--sans); paint-order: stroke; stroke: var(--bg); stroke-width: 4px; }
 @media (max-width: 1100px) { .idx-layout { grid-template-columns: 1fr; } .idx-panel { position: static; max-height: none; } }
 
+/* ---------- loading skeletons and page entrance ---------- */
+.sk { display: inline-block; flex: none; max-width: 100%; vertical-align: middle;
+  background: linear-gradient(90deg, var(--raised) 0%, var(--raised) 35%, color-mix(in srgb, var(--raised) 55%, var(--card)) 50%, var(--raised) 65%, var(--raised) 100%);
+  background-size: 300% 100%; animation: sk-sweep 1.4s var(--ease) infinite; }
+.sk-row { display: flex; align-items: center; gap: 24px; padding: 14px 24px; border-bottom: 1px solid var(--line); }
+.sk-row:last-child { border-bottom: 0; }
+.sk-row .sk:first-child { flex: 1 1 auto; }
+.sk-page { animation: none; }
+@keyframes sk-sweep { from { background-position: 100% 0; } to { background-position: -50% 0; } }
+.page-enter { animation: rise 320ms var(--ease) both; }
+@media (prefers-reduced-motion: reduce) { .sk { animation: none; } .page-enter { animation: none; } }
+
 @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 .enter { animation: rise 400ms var(--ease) both; }
 

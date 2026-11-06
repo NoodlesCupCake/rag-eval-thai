@@ -7,6 +7,7 @@ import { Empty, ErrorNote, PageHead } from "../components/ui";
 import { ResultsView } from "../components/ResultsView";
 import { Questions } from "./Questions";
 import { RagResult } from "../components/RagResult";
+import { PageSkeleton } from "../components/Skeleton";
 
 export function RunDetailPage() {
   const { id = "" } = useParams();
@@ -32,7 +33,7 @@ export function RunDetailPage() {
 
   const results = useMemo(() => run?.results ?? [], [run]);
   if (error) return <ErrorNote error={error} />;
-  if (!run) return <div className="muted">กำลังโหลด</div>;
+  if (!run) return <PageSkeleton variant="results" />;
 
   const lead = results.reduce((bi, r, i) => ((r.metrics.mrr ?? 0) > (results[bi].metrics.mrr ?? 0) ? i : bi), 0);
   const total = run.spec.chunkings.length * run.spec.retrievers.length;

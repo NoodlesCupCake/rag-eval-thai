@@ -8,6 +8,7 @@ import type { Job } from "../types";
 import { date } from "../format";
 import { Empty, PageHead } from "../components/ui";
 import { Term } from "../components/Term";
+import { Sk } from "../components/Skeleton";
 
 /* The embedding store: one index per (documents, chunking, model). Build one, then open
    it to see every chunk on an x/y map and search it. */
@@ -85,6 +86,11 @@ export function IndexesPage() {
       )}
 
       <div className="card">
+        {!list && (
+          <div className="idx-grid">
+            {[0, 1, 2].map((i) => <div key={i} className="idx-card stack-8"><Sk w={18} h={18} r={4} /><Sk w="70%" h={16} /><Sk w="40%" h={10} /><Sk h={30} r={6} /></div>)}
+          </div>
+        )}
         {list && !list.length && (
           <Empty title="ยังไม่มี index">
             <p>สร้าง index จากเอกสารที่มี หรือกด “เปิดในคลัง” จากหน้าผลประเมิน Embedding</p>

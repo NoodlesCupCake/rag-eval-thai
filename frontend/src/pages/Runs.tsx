@@ -7,6 +7,7 @@ import { useAction } from "../feedback";
 import type { RunSummary, SummaryRow } from "../types";
 import { date, pct } from "../format";
 import { CfgLabel, Empty, PageHead } from "../components/ui";
+import { SkRows } from "../components/Skeleton";
 
 const STATUS: Record<string, string> = { running: "กำลังรัน", done: "เสร็จ", failed: "ล้มเหลว" };
 
@@ -45,6 +46,7 @@ export function RunsPage() {
         ))}
       </div>
       <div className="card">
+        {!runs && <SkRows rows={5} cols={[28, 12, 14, 30, 10]} />}
         {runs && runs.length === 0 && (
           <Empty title="ยังไม่มีผลลัพธ์"><p>ไปที่หน้า Benchmark เพื่อรันรอบแรก</p></Empty>
         )}

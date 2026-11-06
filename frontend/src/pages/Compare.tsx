@@ -4,6 +4,7 @@ import { api, errorText } from "../api";
 import type { Run } from "../types";
 import { Empty, ErrorNote, PageHead } from "../components/ui";
 import { ResultsView, type Row } from "../components/ResultsView";
+import { PageSkeleton } from "../components/Skeleton";
 
 /* Several runs side by side: every config from every selected run in one table and one
    set of charts, with an optional baseline row that the others are measured against. */
@@ -35,6 +36,7 @@ export function ComparePage() {
       {setNames.length <= 1 && qCounts.size > 1 && (
         <div className="notice">รอบที่เลือกใช้จำนวนคำถามไม่เท่ากัน ({[...qCounts].join(", ")} ข้อ) ตัวเลขจึงเทียบกันได้แค่คร่าว ๆ ควรรันด้วยชุดคำถามเดียวกัน</div>
       )}
+      {!runs && !error && <PageSkeleton variant="results" />}
       {runs && !rows.length && <div className="card"><Empty title="รอบที่เลือกยังไม่มีผลลัพธ์" /></div>}
       {rows.length > 0 && (
         <ResultsView results={rows} kMax={kMax} focus={focus} setFocus={setFocus} baseline={baseline} setBaseline={setBaseline}

@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useStatus } from "../status";
 import { ThemeToggle } from "./ThemeToggle";
 import { setupSteps } from "../pages/Start";
+import { Sk } from "./Skeleton";
 
 function Mark() {
   return (
@@ -47,7 +48,8 @@ export function Layout() {
           <div className="brand-sub">วัดผล RAG สำหรับเอกสารภาษาไทย</div>
         </div>
         <nav className="nav">
-          {!setupDone && (
+          {/* wait for the status: before it loads every step looks undone, which flashed this item on refresh */}
+          {status && !setupDone && (
             <NavLink to="/start">
               <Flag className="icon" />
               <span>เริ่มต้นใช้งาน</span>
@@ -58,7 +60,8 @@ export function Layout() {
             <NavLink key={to} to={to}>
               <Icon className="icon" />
               <span>{label}</span>
-              {count != null && <em className="count" style={{ fontStyle: "normal" }}>{count}</em>}
+              {count != null ? <em className="count" style={{ fontStyle: "normal" }}>{count}</em>
+                : !status && ["/documents", "/qa", "/runs"].includes(to) ? <Sk w={14} h={10} style={{ marginLeft: "auto" }} /> : null}
             </NavLink>
           ))}
         </nav>
@@ -66,7 +69,7 @@ export function Layout() {
           <NavLink to="/settings" className="row small sec" style={{ height: 20 }}>
             <span className={"dot" + (status?.llm_available ? " on" : "")} />
             <span className="ellipsis mono" style={{ fontSize: 12 }}>
-              {status?.llm_available ? status.llm.model : "ยังไม่ได้ตั้งค่า LLM"}
+              {!status ? <Sk w={90} h={10} /> : status.llm_available ? status.llm.model : "ยังไม่ได้ตั้งค่า LLM"}
             </span>
           </NavLink>
           <div className="meta" style={{ paddingLeft: 14 }}>embedding · {status?.device ?? "…"}</div>
@@ -76,7 +79,8 @@ export function Layout() {
         </div>
       </aside>
       <main className="main">
-        <Outlet />
+        {/* a short fade and rise on every page change */}
+        <div key={pathname.split("/")[1]} className="page-enter"><Outlet /></div>
       </main>
     </div>
   );

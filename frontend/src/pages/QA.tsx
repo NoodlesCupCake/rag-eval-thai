@@ -9,6 +9,7 @@ import type { ChunkCfg, Doc, Job, QA, QASet } from "../types";
 import { SetPicker } from "../components/SetPicker";
 import { IngestPanel } from "../components/IngestPanel";
 import { Empty, ErrorNote, JobProgress, PageHead } from "../components/ui";
+import { SkRows } from "../components/Skeleton";
 
 type Panel = null | "add" | "generate" | "file";
 
@@ -143,6 +144,7 @@ export function QAPage() {
             {!!items?.length && <button className="btn ghost sm" onClick={clearAll} disabled={busy("clear")}><Busy busy={busy("clear")}>ลบทั้งหมด</Busy></button>}
           </div>
         </div>
+        {!items && <SkRows rows={7} cols={[36, 40, 8]} />}
         {items && items.length === 0 && (
           <Empty title="ยังไม่มีคำถาม">
             <p>นำเข้า CSV ที่มีคอลัมน์ <code>question, answer, evidence, document</code> ให้ LLM สร้างจากเอกสาร หรือโหลดชุดตัวอย่างในหน้าเอกสาร</p>

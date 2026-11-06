@@ -6,6 +6,7 @@ import type { ConnectionTest, LLMSettings, Preset } from "../types";
 import { ErrorNote, PageHead } from "../components/ui";
 import { Busy, useFeedback } from "../feedback";
 import { EmbeddingProviders } from "../components/EmbeddingProviders";
+import { PageSkeleton } from "../components/Skeleton";
 
 interface Form {
   preset: string;
@@ -44,7 +45,7 @@ export function SettingsPage() {
       setF({ ...r.settings, api_key: "" });
     });
   }, []);
-  if (!f) return <div className="muted">กำลังโหลด</div>;
+  if (!f) return <PageSkeleton variant="form" />;
 
   const isClaude = f.provider === "anthropic";
   const keyKept = !!saved && saved.provider === f.provider && saved.api_key_set;
