@@ -54,7 +54,7 @@
 
 * { box-sizing: border-box; }
 html, body { margin: 0; }
-body { background: var(--bg); color: var(--text); font: 400 14px/22px var(--sans); -webkit-font-smoothing: antialiased; }
+body { background: var(--bg); color: var(--text); min-height: 100vh; font: 400 14px/22px var(--sans); -webkit-font-smoothing: antialiased; }
 button, input, select, textarea { font: inherit; color: inherit; }
 a { color: inherit; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -73,23 +73,62 @@ a { color: inherit; }
 .icon { width: 16px; height: 16px; flex: none; stroke-width: 1.5; }
 
 /* ---------- shell ---------- */
-.shell { display: grid; grid-template-columns: 248px minmax(0, 1fr); min-height: 100vh; }
+.shell { display: grid; grid-template-columns: 260px minmax(0, 1fr); min-height: 100vh; }
 .main { min-width: 0; }
-/* The sidebar is always an ink panel: the content stays light (or dark) beside it.
-   Its own tokens are scoped here so everything inside adapts without extra classes. */
+/* Sidebar: a floating frosted-glass panel over a faint warm/cool light.
+   Light theme: white frost with dark text. Dark theme: ink frost with light text.
+   Its tokens are scoped here so everything inside adapts. */
 .side {
+  --glass: linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.52));
+  --glass-edge: rgba(255, 255, 255, 0.7);
+  --glass-hi: rgba(255, 255, 255, 0.9);
+  --glass-hover: rgba(23, 23, 23, 0.05);
+  --glass-active: rgba(255, 255, 255, 0.85);
+  --line: rgba(23, 23, 23, 0.07);
+  margin: 12px 0 12px 12px; height: calc(100vh - 24px); top: 12px; position: sticky;
+  padding: 20px 12px 16px; display: flex; flex-direction: column; border-radius: 18px;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(24px) saturate(160%); backdrop-filter: blur(24px) saturate(160%);
+  border: 1px solid var(--glass-edge);
+  box-shadow: inset 0 1px 0 var(--glass-hi), 0 12px 32px rgba(15, 15, 20, 0.08), 0 2px 6px rgba(15, 15, 20, 0.05);
+}
+.side-dark, :root[data-theme="dark"] .side {
   --bg: #111113; --bg-deep: #0c0c0d; --card: #1e1e21; --raised: #1a1a1d;
-  --line: rgba(237, 237, 237, 0.07); --line-strong: rgba(237, 237, 237, 0.14);
+  --line: rgba(237, 237, 237, 0.08); --line-strong: rgba(237, 237, 237, 0.14);
   --text: #ededed; --text-2: #a7a7ad; --muted: #7f7f86; --shadow: none;
   --accent: #e39a3b; --accent-ink: #eaa955; --on-accent: #1a1206; --quiet-series: #4a4a4f;
+  --glass: linear-gradient(180deg, rgba(30, 30, 34, 0.58), rgba(14, 14, 16, 0.68));
+  --glass-edge: rgba(255, 255, 255, 0.09); --glass-hi: rgba(255, 255, 255, 0.07);
+  --glass-hover: rgba(255, 255, 255, 0.05); --glass-active: rgba(255, 255, 255, 0.09);
   color-scheme: dark; color: var(--text);
-  background: #111113; border-right: 1px solid #0c0c0d; padding: 20px 12px 16px; position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column;
+  box-shadow: inset 0 1px 0 var(--glass-hi), 0 12px 32px rgba(0, 0, 0, 0.35);
 }
-.side .nav a.active { background: #232327; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06); }
-.side .nav a.active::before { content: ""; position: absolute; left: -12px; top: 8px; bottom: 8px; width: 2px; border-radius: 1px; background: var(--accent); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .side {
+    --bg: #111113; --bg-deep: #0c0c0d; --card: #1e1e21; --raised: #1a1a1d;
+    --line: rgba(237, 237, 237, 0.08); --line-strong: rgba(237, 237, 237, 0.14);
+    --text: #ededed; --text-2: #a7a7ad; --muted: #7f7f86; --shadow: none;
+    --accent: #e39a3b; --accent-ink: #eaa955; --on-accent: #1a1206; --quiet-series: #4a4a4f;
+    --glass: linear-gradient(180deg, rgba(30, 30, 34, 0.58), rgba(14, 14, 16, 0.68));
+    --glass-edge: rgba(255, 255, 255, 0.09); --glass-hi: rgba(255, 255, 255, 0.07);
+    --glass-hover: rgba(255, 255, 255, 0.05); --glass-active: rgba(255, 255, 255, 0.09);
+    color-scheme: dark; color: var(--text);
+    box-shadow: inset 0 1px 0 var(--glass-hi), 0 12px 32px rgba(0, 0, 0, 0.35);
+  }
+}
+/* the light the glass sits on: a warm patch from the accent and a cool one, both faint */
+.shell { position: relative; isolation: isolate; }
+.shell::before {
+  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(520px 420px at 4% 16%, rgba(180, 83, 9, 0.16), transparent 70%),
+    radial-gradient(460px 480px at 12% 90%, rgba(71, 85, 105, 0.18), transparent 70%),
+    radial-gradient(360px 280px at 20% 52%, rgba(180, 83, 9, 0.06), transparent 70%);
+}
+.side .nav a.active { background: var(--glass-active); box-shadow: inset 0 1px 0 var(--glass-hi), 0 1px 2px rgba(0, 0, 0, 0.06); color: var(--text); }
+.side .nav a:hover { background: var(--glass-hover); }
+.side .nav a.active::before { content: ""; position: absolute; left: -8px; top: 9px; bottom: 9px; width: 3px; border-radius: 2px; background: var(--accent); }
 .side .nav a { position: relative; }
-:root[data-theme="dark"] .side { background: #0c0c0d; border-right-color: rgba(237, 237, 237, 0.06); }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .side { background: #0c0c0d; border-right-color: rgba(237, 237, 237, 0.06); } }
 .brand { padding: 0 8px; }
 .brand-row { display: flex; align-items: center; gap: 10px; height: 28px; }
 .brand-name { font-size: 17px; font-weight: 600; line-height: 1; }
@@ -436,6 +475,33 @@ tr.lead .dist i.first { background: var(--accent); }
 .kind-badge.rag { color: var(--accent-ink); box-shadow: inset 0 0 0 1px var(--accent); background: var(--accent-soft); }
 h1 .kind-badge { margin-left: 8px; vertical-align: 6px; }
 
+/* ---------- hover feedback: quick, small, color and transform only ---------- */
+.nav a .icon, .nav a span { transition: transform 180ms var(--ease), color 150ms var(--ease); }
+.nav a:hover .icon { color: var(--accent-ink); transform: translateX(1px); }
+.nav a:hover span { transform: translateX(2px); }
+.nav a.active .icon { color: var(--accent-ink); }
+.btn { transition: background-color 150ms var(--ease), color 150ms var(--ease), box-shadow 180ms var(--ease), transform 150ms var(--ease); }
+.btn:not(:disabled):hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(15, 15, 20, 0.08); }
+.btn.ghost:not(:disabled):hover, .btn.sm:not(:disabled):hover { box-shadow: none; transform: none; }
+.btn:not(:disabled):active { transform: translateY(0) scale(0.98); box-shadow: none; }
+.btn.accent:not(:disabled):hover { box-shadow: 0 6px 16px rgba(180, 83, 9, 0.22); }
+tbody tr.clickable td:first-child { transition: box-shadow 150ms var(--ease); }
+tbody tr.clickable:hover td:first-child { box-shadow: inset 2px 0 0 var(--line-strong); }
+tbody tr.clickable.lead:hover td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
+.list-row.clickable:hover, .q-row.clickable:hover { box-shadow: inset 2px 0 0 var(--line-strong); }
+.seg button:not(.on):hover { background: color-mix(in srgb, var(--card) 60%, transparent); }
+.set-tab:not(.on):hover { box-shadow: inset 0 -2px 0 var(--line-strong); }
+.rank-row .rank-bar span { transition: filter 150ms var(--ease); }
+.rank-row:hover:not(:disabled) .rank-bar span { filter: brightness(1.08); }
+.rank-row:hover:not(:disabled) .chev { color: var(--text); transform: translateX(2px); }
+.card { transition: border-color 180ms var(--ease), box-shadow 180ms var(--ease); }
+.stat:hover { border-color: var(--line-strong); }
+.fl-node { transition: border-color 150ms var(--ease), box-shadow 150ms var(--ease), transform 150ms var(--ease); }
+.fl-chunk:hover, .fl-question:hover { border-color: var(--accent); transform: translateY(-1px); }
+@media (prefers-reduced-motion: reduce) {
+  .nav a:hover span, .nav a:hover .icon, .btn:not(:disabled):hover, .fl-chunk:hover, .fl-question:hover, .rank-row:hover .chev { transform: none; }
+}
+
 @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 .enter { animation: rise 400ms var(--ease) both; }
 
@@ -452,7 +518,8 @@ h1 .kind-badge { margin-left: 8px; vertical-align: 6px; }
   .card-pad { padding: 16px; }
   .card-head { padding: 12px 16px; }
   .lat-row { padding: 8px 16px; }
-  .side { position: static; height: auto; flex-direction: row; align-items: center; gap: 12px; padding: 12px 16px; overflow-x: auto; }
+  .side { position: static; height: auto; margin: 0; border-radius: 0; border: 0; flex-direction: row; align-items: center; gap: 12px; padding: 12px 16px; overflow-x: auto; }
+  .shell::before { display: none; }
   .brand-sub, .side-foot, .nav .count { display: none; }
   .nav { flex-direction: row; margin: 0; }
   .nav a span { display: none; }
