@@ -10,6 +10,8 @@ import { CfgLabel } from "./ui";
 
 export function RankScale({ result, kMax, questions }: { result: Result; kMax: number; questions?: Run["questions"] }) {
   const [open, setOpen] = useState<number | null>(null);
+  const [all, setAll] = useState(false);
+  const SAMPLE = 5;
   const pq = result.per_question;
   const n = pq.length || 1;
   const byRank = Array.from({ length: kMax + 1 }, () => [] as typeof pq); // last = not found
@@ -19,7 +21,7 @@ export function RankScale({ result, kMax, questions }: { result: Result; kMax: n
                 ...(byRank[kMax].length ? [{ label: "ไม่เจอ", rank: 0, qs: byRank[kMax] }] : [])];
   const max = Math.max(...rows.map((r) => r.qs.length), 1);
   const first = byRank[0].length;
-  const p95 = kNeeded(result, 0.95), all = kNeeded(result, 1);
+  const p95 = kNeeded(result, 0.95), allIn = kNeeded(result, 1);
   const pct = (x: number) => `${Math.round((x / n) * 100)}%`;
   let running = 0;
 
@@ -31,8 +33,8 @@ export function RankScale({ result, kMax, questions }: { result: Result; kMax: n
           <span>ของคำถาม เจอ chunk ที่ถูก<b>เป็นอันดับแรก</b></span>
         </div>
         <div className="small sec">
-          {all ? <>ทุกข้อเจอภายในอันดับ {all}</> : <>{byRank[kMax].length} ข้อไม่เจอใน {kMax} อันดับ</>}
-          {p95 && p95 !== all ? <> · 95% เจอภายในอันดับ {p95}</> : null}
+          {allIn ? <>ทุกข้อเจอภายในอันดับ {allIn}</> : <>{byRank[kMax].length} ข้อไม่เจอใน {kMax} อันดับ</>}
+          {p95 && p95 !== allIn ? <> · 95% เจอภายในอันดับ {p95}</> : null}
           {" · "}<CfgLabel label={result.label} />
         </div>
       </div>
@@ -42,7 +44,7 @@ export function RankScale({ result, kMax, questions }: { result: Result; kMax: n
           const isOpen = open === r.rank;
           return (
             <div key={r.label} role="listitem">
-              <button className={"rank-row" + (r.rank === 0 ? " miss" : r.rank === 1 ? " first" : "")} onClick={() => setOpen(isOpen ? null : r.rank)}
+              <button className={"rank-row" + (r.rank === 0 ? " miss" : r.rank === 1 ? " first" : "")} onClick={() => { setOpen(isOpen ? null : r.rank); setAll(false); }}
                       aria-expanded={isOpen} disabled={!r.qs.length}>
                 <ChevronRight className="icon chev" style={{ transform: isOpen ? "rotate(90deg)" : undefined }} />
                 <span className="rank-label">{r.label}</span>
@@ -51,9 +53,16 @@ export function RankScale({ result, kMax, questions }: { result: Result; kMax: n
                 <span className="rank-cum">{r.rank ? `สะสม ${pct(running)}` : ""}</span>
               </button>
               {isOpen && (
-                <ul className="rank-qs">
-                  {r.qs.map((q) => <li key={q.qa_id}>{questions?.[q.qa_id]?.question ?? q.qa_id}</li>)}
-                </ul>
+                <div className="rank-qs">
+                  <ul>
+                    {(all ? r.qs : r.qs.slice(0, SAMPLE)).map((q) => <li key={q.qa_id}>{questions?.[q.qa_id]?.question ?? q.qa_id}</li>)}
+                  </ul>
+                  {r.qs.length > SAMPLE && (
+                    <button className="btn ghost sm" onClick={() => setAll(!all)}>
+                      {all ? "แสดงแค่ตัวอย่าง" : `ดูทั้งหมด ${r.qs.length} ข้อ`}
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           );

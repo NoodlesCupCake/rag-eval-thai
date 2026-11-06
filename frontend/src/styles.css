@@ -412,7 +412,8 @@ tr.lead .dist i.first { background: var(--accent); }
 .rank-row.miss .rank-label { color: var(--negative); }
 .rank-n { font: 500 13px/1 var(--mono); color: var(--text); text-align: right; font-variant-numeric: tabular-nums; }
 .rank-cum { font: 12px/1 var(--mono); color: var(--muted); text-align: right; }
-.rank-qs { margin: 0 0 8px 36px; padding: 8px 12px 8px 20px; border-left: 2px solid var(--line-strong); color: var(--text-2); font-size: 13px; line-height: 22px; }
+.rank-qs { margin: 0 0 8px 36px; padding: 4px 12px 4px 12px; border-left: 2px solid var(--line-strong); color: var(--text-2); font-size: 13px; line-height: 22px; }
+.rank-qs ul { margin: 0 0 4px; padding-left: 18px; }
 @media (max-width: 760px) { .rank-row { grid-template-columns: 16px 64px minmax(0, 1fr) 48px; } .rank-cum { display: none; } }
 
 /* ---------- start page illustration ---------- */
