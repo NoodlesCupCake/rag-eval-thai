@@ -18,10 +18,15 @@ ANTHROPIC_DEFAULT_MODEL = "claude-opus-5-5"
 # Claude models that accept the server-side refusal fallback ("default" routing).
 _FALLBACK_MODELS = {"claude-opus-5-5", "claude-opus-5", "claude-fable-5-1", "claude-sonnet-5-5"}
 
+# Inside a container "localhost" is the container itself; servers on the host machine
+# are reachable at host.docker.internal (mapped in docker-compose.yml).
+IN_DOCKER = os.path.exists("/.dockerenv")
+_HOST = "host.docker.internal" if IN_DOCKER else "localhost"
+
 PRESETS = [
     {"id": "anthropic", "label": "Claude (Anthropic)", "provider": "anthropic", "base_url": "", "model": ANTHROPIC_DEFAULT_MODEL},
-    {"id": "ollama", "label": "Ollama", "provider": "openai", "base_url": "http://localhost:11434/v1", "model": "qwen2.5:7b"},
-    {"id": "lmstudio", "label": "LM Studio", "provider": "openai", "base_url": "http://localhost:1234/v1", "model": ""},
+    {"id": "ollama", "label": "Ollama", "provider": "openai", "base_url": f"http://{_HOST}:11434/v1", "model": "qwen2.5:7b"},
+    {"id": "lmstudio", "label": "LM Studio", "provider": "openai", "base_url": f"http://{_HOST}:1234/v1", "model": ""},
     {"id": "openai", "label": "OpenAI", "provider": "openai", "base_url": "https://api.openai.com/v1", "model": ""},
     {"id": "custom", "label": "OpenAI-compatible อื่น ๆ", "provider": "openai", "base_url": "", "model": ""},
 ]
@@ -90,8 +95,9 @@ def _client(s: dict):
 
 # ---------- one call ----------
 
-def _call(system: str, user: str, schema: dict | None = None, max_tokens: int = 4096, model: str | None = None) -> str:
-    s = settings()
+def _call(system: str, user: str, schema: dict | None = None, max_tokens: int = 4096,
+          model: str | None = None, cfg: dict | None = None) -> str:
+    s = cfg or settings()
     model = model or s["model"]
     if not model:
         raise LLMError("ยังไม่ได้ตั้งชื่อโมเดลในหน้าตั้งค่า")
@@ -178,11 +184,41 @@ def _json(text: str) -> dict:
     raise LLMError("โมเดลไม่ได้ตอบเป็น JSON ที่อ่านได้")
 
 
-def test_connection() -> dict:
+def list_models(cfg: dict) -> list[str]:
+    """Model ids the server reports. Errors propagate as LLMError."""
+    client = _client(cfg)
+    try:
+        if cfg["provider"] == "anthropic":
+            return [m.id for m in client.models.list(limit=100)]
+        return sorted(m.id for m in client.models.list().data)
+    except Exception as e:  # SDK error classes differ per provider; report them all the same way
+        name = type(e).__name__
+        if "Authentication" in name:
+            raise LLMError("API key ไม่ถูกต้อง (authentication failed)") from e
+        if "Connection" in name or "Timeout" in name:
+            raise LLMError(f"เชื่อมต่อ {cfg['base_url'] or 'api.anthropic.com'} ไม่ได้" + (
+                " (ใน Docker ใช้ host.docker.internal แทน localhost)" if IN_DOCKER and "localhost" in cfg["base_url"] else "")) from e
+        raise LLMError(f"ดึงรายชื่อโมเดลไม่ได้: {e}") from e
+
+
+def test_connection(cfg: dict) -> dict:
+    """Check the server, list its models, and if a model is set, send one tiny prompt."""
+    models, list_error = [], None
+    try:
+        models = list_models(cfg)
+    except LLMError as e:
+        list_error = str(e)
+        if "เชื่อมต่อ" in list_error or "API key" in list_error:
+            raise
+    out = {"ok": False, "models": models, "model": cfg["model"], "reply": None, "ms": None, "note": list_error}
+    if not cfg["model"]:
+        out["note"] = "เชื่อมต่อได้ เลือกโมเดลแล้วทดสอบอีกครั้ง" if models else (list_error or "ใส่ชื่อโมเดล")
+        return out
     t0 = time.perf_counter()
-    text = _call("Reply with exactly: OK", "ping", max_tokens=1024)
-    return {"ok": True, "reply": text.strip()[:200], "ms": (time.perf_counter() - t0) * 1000.0,
-            "model": default_model()}
+    text = _call("Reply with exactly: OK", "ping", max_tokens=1024, cfg=cfg)
+    out.update(ok=True, reply=re.sub(r"<think>.*?</think>", "", text, flags=re.S).strip()[:200],
+               ms=(time.perf_counter() - t0) * 1000.0)
+    return out
 
 
 # ---------- QA generation ----------

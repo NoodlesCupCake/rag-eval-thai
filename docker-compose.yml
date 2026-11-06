@@ -1,16 +1,18 @@
-# docker compose up --build                       app on http://localhost:8000 (CPU)
-# docker compose --profile ollama up --build      also start Ollama in a container
+# docker compose up --build        http://localhost:8000 (embeddings on CPU)
 # GPU: docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
+#
+# The LLM (Claude, or an OpenAI-compatible server such as Ollama or LM Studio) is set on
+# the app's ตั้งค่า LLM page. Servers on this machine are reachable from the backend
+# container at http://host.docker.internal:<port>/v1
 
 services:
-  app:
+  backend:
     build:
       context: .
+      dockerfile: backend/Dockerfile
       args:
         TORCH_VARIANT: cpu
-    image: bantat:cpu
-    ports:
-      - "8000:8000"
+    image: bantat-backend:cpu
     volumes:
       - ./data:/app/data          # documents, QA set, runs, LLM settings
       - hf-models:/models         # downloaded embedding models survive rebuilds
@@ -18,22 +20,17 @@ services:
       - path: .env
         required: false
     extra_hosts:
-      # lets the app reach Ollama / LM Studio running on the host machine:
-      # base URL http://host.docker.internal:11434/v1
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
-  ollama:
-    image: ollama/ollama:0.12.6
-    profiles: ["ollama"]
+  frontend:
+    build: ./frontend
+    image: bantat-frontend
     ports:
-      - "11434:11434"
-    volumes:
-      - ollama:/root/.ollama
+      - "8000:80"                 # nginx serves the React app and proxies /api to backend
+    depends_on:
+      - backend
     restart: unless-stopped
-    # inside compose, set the app's base URL to http://ollama:11434/v1
-    # pull a model: docker compose exec ollama ollama pull qwen2.5:7b
 
 volumes:
   hf-models:
-  ollama:

@@ -1,3 +1,4 @@
+# Build from the repository root: docker build -f backend/Dockerfile .
 FROM python:3.11-slim
 
 # cpu (default, small image) or a CUDA build such as cu128 for NVIDIA GPUs
@@ -9,13 +10,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     HF_HOME=/models
 
 WORKDIR /app
-
 RUN pip install torch --index-url https://download.pytorch.org/whl/${TORCH_VARIANT}
 COPY backend/requirements.txt backend/requirements.txt
 RUN pip install -r backend/requirements.txt
 
 COPY backend backend
-COPY frontend frontend
 COPY samples samples
 
 WORKDIR /app/backend

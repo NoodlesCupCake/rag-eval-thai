@@ -34,25 +34,25 @@ you don't need to relabel anything when you change the chunk size.
 ## Run with Docker
 
 ```bash
-docker compose up --build                     # http://localhost:8000, CPU
-docker compose --profile ollama up --build    # also run Ollama in a container
+docker compose up --build    # http://localhost:8000, embeddings on CPU
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build   # NVIDIA GPU (CUDA 12.8)
 ```
 
-`./data` is mounted into the container, so documents, QA sets, runs and settings stay
-on your disk. Downloaded embedding models live in the `hf-models` volume.
-For the LLM base URL inside Docker:
+Two services: `frontend` (nginx serving the built React app on port 8000, proxying
+`/api`) and `backend` (FastAPI). `./data` is mounted into the backend, so documents, QA
+sets, runs and settings stay on your disk. Downloaded embedding models live in the
+`hf-models` volume.
 
-- Ollama from the compose profile: `http://ollama:11434/v1`, then
-  `docker compose exec ollama ollama pull qwen2.5:7b`
-- Ollama or LM Studio running on the host: `http://host.docker.internal:11434/v1`
-  (or port `1234` for LM Studio)
+The LLM is not part of the compose file. Run Ollama or LM Studio however you like, then
+enter it on the **ตั้งค่า LLM** page. Inside Docker the presets already point at
+`http://host.docker.internal:<port>/v1`, which reaches servers on your machine.
 
 ## Run without Docker
 
-Requires Python 3.10+.
+Requires Python 3.10+ and Node 20+.
 
 ```bash
+# backend
 cd backend
 python3 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
@@ -60,24 +60,32 @@ source .venv/bin/activate          # Windows: .venv\Scripts\activate
 #   pip install torch --index-url https://download.pytorch.org/whl/cu128
 pip install -r requirements.txt
 uvicorn app.main:app --port 8000
+
+# frontend, in another terminal
+cd frontend
+npm install
+npm run dev                        # http://localhost:5173, proxies /api to :8000
 ```
 
-Open http://localhost:8000 and click **โหลดชุดตัวอย่าง** to load 3 fictional Thai
-documents and 29 questions, then go to Benchmark.
+Or run `npm run build` once; the backend then serves `frontend/dist` itself at
+http://localhost:8000.
 
-To use an LLM for QA generation and answer grading, open **ตั้งค่า LLM**, pick a preset
-and click **บันทึกและทดสอบ**:
+Open the app and click **โหลดชุดตัวอย่าง** to load 3 fictional Thai documents and 29
+questions, then go to Benchmark.
 
-| Preset | Base URL | Notes |
-| --- | --- | --- |
-| Claude (Anthropic) | blank | needs an API key, default model `claude-opus-5-5` |
-| Ollama | `http://localhost:11434/v1` | `ollama pull qwen2.5:7b` first, no key needed |
-| LM Studio | `http://localhost:1234/v1` | no key needed |
-| OpenAI / others | the server's `/v1` URL | anything with `/v1/chat/completions` |
+### LLM settings
 
-Settings are saved in `data/settings.json`, which is git-ignored. You can also use
-environment variables in a `.env` file in the project root (see `.env.example`).
-If Ollama runs on Windows and this app runs in WSL, and `localhost` doesn't connect,
+Open **ตั้งค่า LLM**:
+
+1. Pick a provider: Claude, Ollama, LM Studio, OpenAI, or any OpenAI-compatible server.
+2. Fill in the base URL, API key (not needed for Ollama or LM Studio) and model. Leave the
+   model empty and press **ทดสอบการเชื่อมต่อ** to fetch the server's model list.
+3. The test sends one short prompt. If it passes, the settings are saved and the page
+   links to the next step. If it fails, nothing is saved and the error is shown.
+
+Settings are saved in `data/settings.json`, which is git-ignored. Environment variables
+in a `.env` file at the project root work as defaults (see `.env.example`).
+If Ollama runs on Windows and the backend runs in WSL, and `localhost` doesn't connect,
 use the Windows host IP or set `networkingMode=mirrored` in `.wslconfig`.
 
 Using the same model both to answer and to grade tends to inflate scores, and small
@@ -119,11 +127,13 @@ backend/app/
   metrics.py    span-overlap hits, Hit@k, MRR, coverage, percentiles
   llm.py        Claude or OpenAI-compatible: QA generation, answering, judging
   runner.py     background benchmark and generation jobs
-  main.py       FastAPI routes, serves the frontend
-frontend/       React (no build step) + hand-drawn SVG charts
+  main.py       FastAPI routes
+frontend/src/   Vite + React + TypeScript
+  pages/        Documents, QA, Bench, Runs, RunDetail, Questions, Settings
+  components/   Layout, HitCurve, LatencyList, Ruler (the rank ruler), ui
 samples/        fictional Thai documents + QA set
-data/           your documents, QA set and run results (JSON, created on first run)
+data/           your documents, QA set, runs and settings (JSON, created on first run)
 ```
 
-UI design pass follows [unslop](https://github.com/heydamir/unslop) by Damir Sokolovsky
+UI design pass with [unslop](https://github.com/heydamir/unslop) by Damir Sokolovsky
 (@heydamir), CC BY 4.0.

@@ -20,7 +20,6 @@ from .qa import locate_evidence, parse_upload, read_document_file, resolve_rows 
 from .retrieval import RETRIEVER_TYPES, SUGGESTED_MODELS, device_name  # noqa: E402
 
 app = FastAPI(title="RAG Eval TH")
-FRONTEND = storage.ROOT / "frontend"
 
 
 @app.get("/api/status")
@@ -84,9 +83,10 @@ def preview_chunks(doc_id: str, req: PreviewReq):
     bounds = {0, len(d["text"])}
     for s, e in word_spans(d["text"]):
         bounds.update((s, e))
-    mid_word = sum(1 for c in chunks if c.start not in bounds or c.end not in bounds)
+    out = [c.to_dict() | {"cut_start": c.start not in bounds, "cut_end": c.end not in bounds} for c in chunks]
+    mid_word = sum(1 for c in out if c["cut_start"] or c["cut_end"])
     sizes = [c.end - c.start for c in chunks] or [0]
-    return {"chunks": [c.to_dict() for c in chunks], "mid_word": mid_word,
+    return {"chunks": out, "mid_word": mid_word,
             "stats": {"n": len(chunks), "avg": sum(sizes) / len(sizes), "min": min(sizes), "max": max(sizes)}}
 
 
@@ -220,7 +220,7 @@ def qa_generate(req: GenerateReq):
 
 @app.get("/api/settings")
 def settings_get():
-    return {"settings": llm.public_settings(), "presets": llm.PRESETS}
+    return {"settings": llm.public_settings(), "presets": llm.PRESETS, "in_docker": llm.IN_DOCKER}
 
 
 class SettingsIn(BaseModel):
@@ -232,27 +232,35 @@ class SettingsIn(BaseModel):
     effort: str = "low"
 
 
-@app.put("/api/settings")
-def settings_put(s: SettingsIn):
+def _resolve_settings(s: SettingsIn) -> dict:
     if s.provider not in ("anthropic", "openai"):
         raise HTTPException(400, "provider ต้องเป็น anthropic หรือ openai")
-    if s.provider == "openai" and not s.base_url:
+    if s.provider == "openai" and not s.base_url.strip():
         raise HTTPException(400, "ต้องใส่ base URL")
     old = storage.get_settings()
     new = s.model_dump()
     new["base_url"] = new["base_url"].strip().rstrip("/")
-    if new["api_key"] is None:
+    new["model"] = new["model"].strip()
+    if new["api_key"] is None:  # keep the saved key when the provider is unchanged
         new["api_key"] = old.get("api_key", "") if old.get("provider") == s.provider else ""
-    storage.save_settings(new)
+    if s.provider == "anthropic" and not new["api_key"] and not llm.settings()["api_key"]:
+        raise HTTPException(400, "Claude ต้องใช้ API key")
+    if s.provider == "anthropic" and not new["api_key"]:
+        new["api_key"] = llm.settings()["api_key"]  # from .env
+    return new
+
+
+@app.put("/api/settings")
+def settings_put(s: SettingsIn):
+    storage.save_settings(_resolve_settings(s))
     return llm.public_settings()
 
 
 @app.post("/api/settings/test")
-def settings_test():
-    if not llm.available():
-        raise HTTPException(400, "ตั้งค่ายังไม่ครบ")
+def settings_test(s: SettingsIn):
+    """Test the values in the form without saving them."""
     try:
-        return llm.test_connection()
+        return llm.test_connection(_resolve_settings(s))
     except llm.LLMError as e:
         raise HTTPException(400, str(e))
 
@@ -326,12 +334,19 @@ def job(job_id: str):
 
 
 # ---------- frontend ----------
+# The React app is built into frontend/dist (npm run build). In Docker it is served by
+# nginx instead, and during development by Vite on :5173 with /api proxied here.
 
-app.mount("/static", StaticFiles(directory=FRONTEND), name="static")
+FRONTEND_DIST = storage.ROOT / "frontend" / "dist"
 
+if (FRONTEND_DIST / "index.html").exists():
+    app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
 
-@app.get("/{path:path}")
-def spa(path: str):
-    if path.startswith("api/"):
-        raise HTTPException(404, "not found")
-    return FileResponse(FRONTEND / "index.html")
+    @app.get("/{path:path}")
+    def spa(path: str):
+        if path.startswith("api/"):
+            raise HTTPException(404, "not found")
+        f = FRONTEND_DIST / path
+        if path and f.is_file() and FRONTEND_DIST in f.resolve().parents:
+            return FileResponse(f)
+        return FileResponse(FRONTEND_DIST / "index.html")
