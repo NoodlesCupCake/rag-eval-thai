@@ -31,7 +31,24 @@ you don't need to relabel anything when you change the chunk size.
 | Latency p50 / p95 / p99 | time from query to ranked results, per question: query embedding + search (warm-up excluded) |
 | ตอบถูก / อิงเอกสาร | answer correctness (correct = 1, partial = 0.5) and share of answers fully grounded in the context, both graded by the LLM |
 
-## Run
+## Run with Docker
+
+```bash
+docker compose up --build                     # http://localhost:8000, CPU
+docker compose --profile ollama up --build    # also run Ollama in a container
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build   # NVIDIA GPU (CUDA 12.8)
+```
+
+`./data` is mounted into the container, so documents, QA sets, runs and settings stay
+on your disk. Downloaded embedding models live in the `hf-models` volume.
+For the LLM base URL inside Docker:
+
+- Ollama from the compose profile: `http://ollama:11434/v1`, then
+  `docker compose exec ollama ollama pull qwen2.5:7b`
+- Ollama or LM Studio running on the host: `http://host.docker.internal:11434/v1`
+  (or port `1234` for LM Studio)
+
+## Run without Docker
 
 Requires Python 3.10+.
 
