@@ -1,6 +1,6 @@
-# Bantat: RAG eval for Thai documents
+# RAG Eval: retrieval evaluation for Thai documents
 
-Bantat (บรรทัด, "ruler") measures how well a RAG pipeline finds the right passage in
+RAG Eval measures how well a RAG pipeline finds the right passage in
 Thai documents, so you can choose the chunking method, chunk size, retriever and
 embedding model from numbers instead of guesses.
 

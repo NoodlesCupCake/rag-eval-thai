@@ -1,4 +1,4 @@
-/* The rank ruler, Bantat's one signature detail: graduated ticks for ranks 1..k with the
+/* The rank ruler, the app's one signature detail: graduated ticks for ranks 1..k with the
    rank where the evidence was found marked like a reading on a scale. */
 
 export function RankRuler({ rank, k }: { rank: number | null; k: number }) {

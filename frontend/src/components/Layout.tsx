@@ -2,6 +2,7 @@ import { FileText, Gauge, ListChecks, Play, Settings2 } from "lucide-react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useEffect } from "react";
 import { useStatus } from "../status";
+import { ThemeToggle } from "./ThemeToggle";
 
 function Mark() {
   return (
@@ -33,7 +34,8 @@ export function Layout() {
         <div className="brand">
           <div className="brand-row">
             <Mark />
-            <span className="brand-name">Bantat</span>
+            <span className="brand-name">RAG Eval</span>
+            <ThemeToggle />
           </div>
           <div className="brand-sub">วัดผล RAG สำหรับเอกสารภาษาไทย</div>
         </div>

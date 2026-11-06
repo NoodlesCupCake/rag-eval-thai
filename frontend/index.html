@@ -3,7 +3,11 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Bantat · RAG eval</title>
+    <title>RAG Eval</title>
+    <script>
+      // apply the saved theme before first paint so there is no flash
+      try { const t = localStorage.getItem("rag-eval-theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch {}
+    </script>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   </head>
   <body>

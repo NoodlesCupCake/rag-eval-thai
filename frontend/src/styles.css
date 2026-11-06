@@ -1,4 +1,4 @@
-/* Bantat: a measuring bench for Thai RAG retrieval.
+/* RAG Eval: a measuring bench for Thai RAG retrieval.
    Graphite neutrals, one amber accent (the needle), Plex Sans Thai with Plex Mono figures.
    Design pass with unslop by Damir Sokolovsky (@heydamir), CC BY 4.0. */
 
@@ -79,6 +79,11 @@ a { color: inherit; }
 .brand { padding: 0 8px; }
 .brand-row { display: flex; align-items: center; gap: 10px; height: 28px; }
 .brand-name { font-size: 17px; font-weight: 600; line-height: 1; }
+.theme-toggle { margin-left: auto; color: var(--muted); }
+
+/* droplet theme change: the new snapshot is revealed by a growing circle (see ThemeToggle) */
+::view-transition-old(root), ::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+::view-transition-new(root) { z-index: 2; }
 .brand-sub { font-size: 12px; line-height: 16px; color: var(--muted); margin-top: 8px; }
 .nav { margin-top: 24px; display: flex; flex-direction: column; gap: 2px; }
 .nav a { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 8px; border-radius: 8px; color: var(--text-2); text-decoration: none; transition: background-color 150ms var(--ease), color 150ms var(--ease); }

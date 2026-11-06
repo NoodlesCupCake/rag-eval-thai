@@ -7,7 +7,7 @@ services:
     build:
       args:
         TORCH_VARIANT: cu128   # CUDA 12.8 build, supports RTX 50-series
-    image: bantat-backend:cu128
+    image: rag-eval-backend:cu128
     deploy:
       resources:
         reservations:
