@@ -21,6 +21,7 @@ export function EmbeddingMap({ runId, index, result }: { runId: string; index: n
   const [data, setData] = useState<MapData | null>(null);
   const [method, setMethod] = useState<"tsne" | "pca">("tsne");
   const [sel, setSel] = useState<string | null>(null);
+  const [links, setLinks] = useState(true);
   const [tip, setTip] = useState<{ x: number; y: number; title: string; body: string } | null>(null);
   const [W, setW] = useState(900);
   const box = useRef<HTMLDivElement>(null);
@@ -49,6 +50,7 @@ export function EmbeddingMap({ runId, index, result }: { runId: string; index: n
   const color = (docId: string) => DOC_COLORS[docIndex.get(docId) ?? 0] ?? "var(--quiet-series)";
   const byId = new Map((data?.chunks ?? []).map((c) => [c.id, c]));
   const q = data?.questions.find((x) => x.qa_id === sel) ?? null;
+  const qColor = (x: MapQ) => { const g = byId.get(x.gold[0]); return g ? color(g.doc_id) : "var(--muted)"; };
   const show = (e: React.MouseEvent, title: string, body: string) => setTip({ x: e.clientX, y: e.clientY, title, body });
 
   return (
@@ -56,6 +58,7 @@ export function EmbeddingMap({ runId, index, result }: { runId: string; index: n
       <div className="card-head">
         <h2>แผนที่ embedding</h2>
         <div className="row" style={{ gap: 12 }}>
+          {data && <label className="check small"><input type="checkbox" checked={links} onChange={(e) => setLinks(e.target.checked)} />เส้นไปยัง chunk ที่ถูก</label>}
           {data && (
             <div className="seg">
               <button className={method === "tsne" ? "on" : ""} onClick={() => build("tsne")} disabled={busy("map")}>t-SNE</button>
@@ -78,13 +81,30 @@ export function EmbeddingMap({ runId, index, result }: { runId: string; index: n
             {data.docs.filter((d) => data.chunks.some((c) => c.doc_id === d.id)).map((d) => (
               <span key={d.id}><i className="sq" style={{ background: color(d.id) }} />{d.name.replace(/\.(md|txt|pdf|docx)$/, "")}</span>
             ))}
-            <span><i className="ci solid" />คำถาม เจอที่อันดับ 1</span>
+            <span className="sep" />
+            <span><i className="sq" style={{ background: "var(--text-2)" }} />chunk</span>
+            <span><i className="ci solid" />คำถาม · เจออันดับ 1</span>
             <span><i className="ci ring" />เจออันดับอื่น</span>
             <span><i className="ci miss">×</i>ไม่เจอ</span>
           </div>
           <div ref={box} className="map-box">
             <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} onClick={() => setSel(null)} role="img"
                  aria-label={`2D ${data.method} map of ${data.chunks.length} chunks and ${data.questions.length} questions`}>
+              <defs>
+                <pattern id="map-dots" width="24" height="24" patternUnits="userSpaceOnUse">
+                  <circle cx="1" cy="1" r="1" className="map-grid-dot" />
+                </pattern>
+              </defs>
+              <rect x="0" y="0" width={W} height={H} fill="url(#map-dots)" />
+              <line x1={W / 2} x2={W / 2} y1={PAD / 2} y2={H - PAD / 2} className="map-axis" />
+              <line x1={PAD / 2} x2={W - PAD / 2} y1={H / 2} y2={H / 2} className="map-axis" />
+              <text x={W - PAD / 2} y={H / 2 - 6} textAnchor="end" className="map-axis-label">x</text>
+              <text x={W / 2 + 6} y={PAD / 2 + 10} className="map-axis-label">y</text>
+              {/* every question to its right chunk: short lines mean the model puts them together */}
+              {links && !q && data.questions.map((x) => x.gold.map((cid) => byId.get(cid) && (
+                <line key={x.qa_id + cid} x1={px(x.x)} y1={py(x.y)} x2={px(byId.get(cid)!.x)} y2={py(byId.get(cid)!.y)}
+                      stroke={qColor(x)} className="map-line soft" />
+              )))}
               {/* lines for the selected question: solid to the right chunk, dashed to what was retrieved */}
               {q && q.top.map((cid, i) => byId.get(cid) && !q.gold.includes(cid) && (
                 <line key={cid} x1={px(q.x)} y1={py(q.y)} x2={px(byId.get(cid)!.x)} y2={py(byId.get(cid)!.y)} className="map-line top">
@@ -97,7 +117,7 @@ export function EmbeddingMap({ runId, index, result }: { runId: string; index: n
               {data.chunks.map((c) => {
                 const on = q && (q.gold.includes(c.id) || q.top.includes(c.id));
                 return (
-                  <rect key={c.id} x={px(c.x) - 5} y={py(c.y) - 5} width={10} height={10} rx={2} fill={color(c.doc_id)}
+                  <rect key={c.id} x={px(c.x) - 4.5} y={py(c.y) - 4.5} width={9} height={9} rx={2} fill={color(c.doc_id)}
                         className={"map-chunk" + (q ? (on ? " on" : " dim") : "") + (q?.gold.includes(c.id) ? " gold" : "")}
                         onMouseMove={(e) => show(e, `${c.doc_name} · chunk ${c.number}`, c.text)} onMouseLeave={() => setTip(null)} />
                 );
@@ -107,6 +127,7 @@ export function EmbeddingMap({ runId, index, result }: { runId: string; index: n
                 const on = sel === x.qa_id;
                 return x.hit_rank ? (
                   <circle key={x.qa_id} cx={px(x.x)} cy={py(x.y)} r={on ? 8 : 6} className={`map-q ${cls}` + (on ? " on" : sel ? " dim" : "")}
+                          style={cls === "solid" ? { fill: qColor(x) } : { stroke: qColor(x) }}
                           onClick={(e) => { e.stopPropagation(); setSel(on ? null : x.qa_id); }}
                           onMouseMove={(e) => show(e, x.hit_rank === 1 ? "เจอที่อันดับ 1" : `เจอที่อันดับ ${x.hit_rank}`, x.question)} onMouseLeave={() => setTip(null)} />
                 ) : (
@@ -121,7 +142,7 @@ export function EmbeddingMap({ runId, index, result }: { runId: string; index: n
           </div>
           <div className="card-pad small muted" style={{ paddingTop: 8 }}>
             {q ? <>“{q.question}” · เส้นทึบไปที่ chunk ที่มีคำตอบ · เส้นประไปที่ chunk ที่ระบบดึงมา 3 อันดับแรก · คลิกพื้นที่ว่างเพื่อยกเลิก</>
-              : <>คลิกจุดคำถามเพื่อดูว่ามันอยู่ใกล้ chunk ที่ถูกแค่ไหน · {data.method === "tsne" ? "t-SNE เน้นให้เห็นกลุ่ม ระยะห่างระหว่างกลุ่มอาจไม่ตรงความจริง" : "PCA ย่อแบบเส้นตรง ระยะโดยรวมตรงกว่าแต่กลุ่มอาจซ้อนกัน"} · การย่อเหลือ 2 มิติบิดระยะเสมอ ตัวเลขในตารางคือผลวัดจริง</>}
+              : <>สีของคำถามคือสีของเอกสารที่มีคำตอบ เส้นยิ่งสั้นยิ่งแปลว่าโมเดลวางคำถามไว้ใกล้ chunk ที่ตอบมันได้ · คลิกจุดคำถามเพื่อดูรายละเอียด · {data.method === "tsne" ? "t-SNE เน้นให้เห็นกลุ่ม ระยะห่างระหว่างกลุ่มอาจไม่ตรงความจริง" : "PCA ย่อแบบเส้นตรง ระยะโดยรวมตรงกว่าแต่กลุ่มอาจซ้อนกัน"} · การย่อเหลือ 2 มิติบิดระยะเสมอ ตัวเลขในตารางคือผลวัดจริง</>}
           </div>
         </>
       )}

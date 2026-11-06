@@ -513,22 +513,27 @@ tbody tr.clickable.lead:hover td:first-child { box-shadow: inset 2px 0 0 var(--a
 .map-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .map-legend .sq { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
 .map-legend .ci { width: 10px; height: 10px; border-radius: 5px; display: inline-flex; align-items: center; justify-content: center; font-style: normal; }
-.map-legend .ci.solid { background: var(--text); }
-.map-legend .ci.ring { box-shadow: inset 0 0 0 2px var(--accent); }
+.map-legend .ci.solid { background: var(--text-2); }
+.map-legend .ci.ring { box-shadow: inset 0 0 0 2px var(--text-2); }
+.map-legend .sep { width: 1px; height: 12px; background: var(--line-strong); }
 .map-legend .ci.miss { color: var(--negative); font: 600 12px/1 var(--mono); }
-.map-box { padding: 0 8px; }
+.map-box { margin: 12px 16px 0; border-radius: 12px; background: var(--bg); box-shadow: inset 0 0 0 1px var(--line); overflow: hidden; }
+.map-grid-dot { fill: var(--line-strong); }
+.map-axis { stroke: var(--line-strong); stroke-dasharray: 2 4; }
+.map-axis-label { fill: var(--muted); font: 11px var(--mono); }
 .map-box svg { display: block; cursor: default; }
-.map-chunk { opacity: 0.85; transition: opacity 150ms var(--ease); stroke: var(--card); stroke-width: 1; }
+.map-chunk { opacity: 0.9; transition: opacity 150ms var(--ease); stroke: var(--bg); stroke-width: 1.5; }
 .map-chunk.dim { opacity: 0.18; }
 .map-chunk.on { opacity: 1; }
 .map-chunk.gold { stroke: var(--accent); stroke-width: 2.5; }
 .map-q { cursor: pointer; transition: opacity 150ms var(--ease); }
-.map-q.solid { fill: var(--text); stroke: var(--card); stroke-width: 1.5; }
-.map-q.ring { fill: var(--card); stroke: var(--accent); stroke-width: 2.5; }
+.map-q.solid { stroke: var(--bg); stroke-width: 2; }
+.map-q.ring { fill: var(--bg); stroke-width: 2.5; }
 .map-q.miss path { stroke: var(--negative); stroke-width: 2.2; stroke-linecap: round; }
-.map-q.on { stroke-width: 3; }
+.map-q.on { stroke: var(--text); stroke-width: 3; }
 .map-q.dim { opacity: 0.25; }
 .map-line { pointer-events: none; }
+.map-line.soft { stroke-width: 1; stroke-opacity: 0.35; }
 .map-line.gold { stroke: var(--accent); stroke-width: 2; }
 .map-line.top { stroke: var(--text-2); stroke-width: 1.2; stroke-dasharray: 4 4; }
 

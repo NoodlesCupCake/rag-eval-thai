@@ -581,7 +581,14 @@ def run_map(run_id: str, req: MapReq):
         Q = np.stack([dense.embedder.query(t) for t in qtexts]) if qtexts else np.zeros((0, C.shape[1]))
     except Exception as e:
         raise HTTPException(400, f"สร้าง embedding ไม่ได้: {e}")
+    # Query and passage embeddings sit in separate regions (the "modality gap", strong with
+    # e5's query:/passage: prefixes). Centre each group on its own mean so questions land
+    # among the chunks they match instead of in a cluster of their own.
+    C = C - C.mean(axis=0)
+    if len(Q):
+        Q = Q - Q.mean(axis=0)
     X = np.vstack([C, Q]).astype(np.float64)
+    X = X / np.clip(np.linalg.norm(X, axis=1, keepdims=True), 1e-12, None)
     n = len(X)
     if req.method == "pca" or n < 8:
         Xc = X - X.mean(axis=0)
