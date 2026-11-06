@@ -6,6 +6,7 @@ import type { ConnectionTest, LLMSettings, Preset } from "../types";
 import { ErrorNote, PageHead } from "../components/ui";
 import { Busy, useFeedback } from "../feedback";
 import { EmbeddingProviders } from "../components/EmbeddingProviders";
+import { ModelPrompts } from "../components/ModelPrompts";
 import { PageSkeleton } from "../components/Skeleton";
 
 interface Form {
@@ -151,6 +152,7 @@ export function SettingsPage() {
         </div>
       ) : null}
       <EmbeddingProviders />
+      <ModelPrompts />
       <div className="small muted">ถ้าใช้โมเดลเดียวกันทั้งตอบและให้คะแนน โมเดลอาจให้คะแนนตัวเองสูงเกินจริง โมเดลเล็กที่รันในเครื่องมักตัดสินภาษาไทยได้ไม่แม่น ควรสุ่มอ่านผลประกอบ</div>
     </div>
   );

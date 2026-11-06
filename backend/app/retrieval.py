@@ -45,11 +45,11 @@ def device_name() -> str:
 
 
 def _prefixes(name: str) -> tuple[str, str]:
-    """Some model families are trained with role prefixes and lose accuracy without them."""
-    n = name.lower()
-    if "e5" in n:
-        return "query: ", "passage: "
-    return "", ""
+    """Query and passage prompts for the model (see prompts.py: documented defaults per
+    model family, overridable in settings)."""
+    from . import prompts
+    p = prompts.get(name)
+    return p["query"], p["passage"]
 
 
 class Embedder:
@@ -60,9 +60,10 @@ class Embedder:
         self.name = name
         self.api = name.startswith(embed_api.PREFIX)
         if self.api:
-            embed_api.parse(name)  # fail early if the provider was removed
+            provider, _ = embed_api.parse(name)  # fail early if the provider was removed
             self.model = None
-            self.q_prefix = self.p_prefix = ""
+            # Voyage takes input_type instead of text prompts
+            self.q_prefix, self.p_prefix = ("", "") if provider["kind"] == "voyage" else _prefixes(name)
         else:
             with _model_lock:
                 self.model = _load_model(name)
@@ -71,14 +72,14 @@ class Embedder:
     def passages(self, texts: list[str]) -> np.ndarray:
         if self.api:
             from . import embed_api
-            return embed_api.embed(self.name, texts, "document")
+            return embed_api.embed(self.name, [self.p_prefix + t for t in texts], "document")
         return self.model.encode([self.p_prefix + t for t in texts], batch_size=32,
                                  normalize_embeddings=True, convert_to_numpy=True, show_progress_bar=False)
 
     def query(self, text: str) -> np.ndarray:
         if self.api:
             from . import embed_api
-            return embed_api.embed(self.name, [text], "query")[0]
+            return embed_api.embed(self.name, [self.q_prefix + text], "query")[0]
         return self.model.encode([self.q_prefix + text], normalize_embeddings=True,
                                  convert_to_numpy=True, show_progress_bar=False)[0]
 
@@ -122,7 +123,7 @@ class DenseRetriever(Retriever):
         self.name = f"dense:{model}"
 
     def index(self, chunks):
-        key = (self.embedder.name, tuple((c.doc_id, c.start, c.end) for c in chunks))
+        key = (self.embedder.name, self.embedder.p_prefix, tuple((c.doc_id, c.start, c.end) for c in chunks))
         self.cached = key in _emb_cache
         self.encode_seconds = 0.0
         if not self.cached:
@@ -137,6 +138,7 @@ class DenseRetriever(Retriever):
         """Embedding-model facts for the results page. Encoding speed is only known when
         this run actually encoded the chunks (not served from the cache)."""
         return {"model": self.embedder.name, "dim": int(self.matrix.shape[1]), "device": "api" if self.embedder.api else device_name(),
+                "query_prompt": self.embedder.q_prefix, "passage_prompt": self.embedder.p_prefix,
                 "cached": self.cached, "encode_seconds": self.encode_seconds,
                 "chunks_per_sec": n_chunks / self.encode_seconds if self.encode_seconds else None}
 

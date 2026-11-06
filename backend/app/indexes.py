@@ -27,8 +27,9 @@ def docs_fingerprint(docs: list[dict]) -> str:
 
 
 def _key(chunking: dict, model: str, fp: str) -> str:
+    from . import prompts
     c = chunking
-    return f"{model}|{c['strategy']}|{c['size']}|{c.get('overlap', 0)}|{fp}"
+    return f"{model}|{prompts.tag(model)}|{c['strategy']}|{c['size']}|{c.get('overlap', 0)}|{fp}"
 
 
 def list_indexes() -> list[dict]:
@@ -107,6 +108,7 @@ def build(chunking: dict, model: str, on_step=lambda msg: None) -> dict:
         "id": index_id, "key": _key(chunking, model, fp), "model": model, "chunking": chunking, "docs_fp": fp,
         "n_chunks": len(chunks), "dim": int(V.shape[1]), "size_bytes": int(V.nbytes), "created_at": storage.now(),
         "encode_seconds": secs, "device": "api" if emb.api else device_name(),
+        "query_prompt": emb.q_prefix, "passage_prompt": emb.p_prefix,
         "docs": [{"id": d["id"], "name": d["name"]} for d in docs],
         "chunks": [{"id": c.id, "doc_id": c.doc_id, "doc_name": names.get(c.doc_id), "number": int(c.id.rsplit(":", 1)[1]) + 1,
                     "start": c.start, "end": c.end, "text": c.text,

@@ -145,7 +145,8 @@ export interface Result {
   avg_chunk_chars: number;
   index_seconds: number;
   /** dense and hybrid only: the embedding model's vector size and encoding speed */
-  embedding?: { model: string; dim: number; device: string; cached: boolean; encode_seconds: number; chunks_per_sec: number | null } | null;
+  embedding?: { model: string; dim: number; device: string; cached: boolean; encode_seconds: number; chunks_per_sec: number | null;
+                query_prompt?: string; passage_prompt?: string } | null;
   metrics: Metrics;
   latencies: number[];
   per_question: PerQuestion[];

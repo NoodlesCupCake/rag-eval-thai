@@ -126,6 +126,7 @@ export function BenchPage() {
                   </label>
                 </div>
                 {models.length < 2 && <div className="small muted">เลือกอย่างน้อย 2 โมเดลเพื่อให้มีตารางเทียบ</div>}
+                <div className="small muted">ระบบใส่ prompt ที่แต่ละโมเดลแนะนำให้อัตโนมัติ (เช่น <code>query:</code> ของ e5, คำสั่งของ Qwen3-Embedding) ดูหรือแก้ได้ที่ <Link to="/settings">ตั้งค่า</Link></div>
               </>
             )}
           </div>

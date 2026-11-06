@@ -443,6 +443,35 @@ def emb_provider_delete(pid: str):
     return {"ok": True}
 
 
+# ---------- embedding model prompts ----------
+
+@app.get("/api/model-prompts", tags=["settings"])
+def model_prompts(model: str | None = None):
+    """Effective query/passage prompts. With ?model= one model; without, every saved override."""
+    from . import prompts
+    if model:
+        return prompts.get(model) | {"model": model, "default": prompts.default_for(model)}
+    return [{"model": m} | prompts.get(m) for m in prompts.custom()]
+
+
+class PromptIn(BaseModel):
+    model: str = Field(min_length=1)
+    query: str = ""
+    passage: str = ""
+
+
+@app.put("/api/model-prompts", tags=["settings"])
+def model_prompts_set(p: PromptIn):
+    from . import prompts
+    return prompts.set_custom(p.model, p.query, p.passage) | {"model": p.model, "default": prompts.default_for(p.model)}
+
+
+@app.delete("/api/model-prompts", tags=["settings"])
+def model_prompts_reset(model: str):
+    from . import prompts
+    return prompts.reset(model) | {"model": model, "default": prompts.default_for(model)}
+
+
 # ---------- embedding store ----------
 
 class IndexReq(BaseModel):

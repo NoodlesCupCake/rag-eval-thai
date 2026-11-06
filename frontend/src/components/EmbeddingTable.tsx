@@ -2,6 +2,7 @@ import type { Result } from "../types";
 import { ms, pct } from "../format";
 import { kNeeded } from "./ResultsView";
 import { Term } from "./Term";
+import { aligned, meanCI, pairedDiff, propCI, rr } from "../stats";
 
 /* One row per embedding model, using the plain dense configs so the model is the only
    thing that differs: quality next to speed and vector size. Shown when a run (or a
@@ -50,6 +51,7 @@ export function EmbeddingTable({ results, kMax, showSpeed = false }: { results: 
                       <th className="num"><Term k="chunks_per_sec">index</Term></th>
                     </>}
                     <th className="num"><Term k="dim">มิติ</Term></th>
+                    <th><Term k="vs_best">ต่างจากอันดับ 1</Term></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -61,11 +63,16 @@ export function EmbeddingTable({ results, kMax, showSpeed = false }: { results: 
                         <td>
                           <div className="cfg-label" title={r.retriever.model ?? ""}>{r.retriever.model?.split("/").pop()}</div>
                           <div className="meta">{r.retriever.model?.includes("/") ? r.retriever.model.split("/")[0] : ""}</div>
+                          {(e?.query_prompt || e?.passage_prompt) && (
+                            <div className="meta ellipsis" style={{ maxWidth: 260 }} title={`query: ${JSON.stringify(e?.query_prompt ?? "")}\npassage: ${JSON.stringify(e?.passage_prompt ?? "")}`}>
+                              prompt {JSON.stringify((e?.query_prompt ?? "").slice(0, 24))}
+                            </div>
+                          )}
                           {r.run && <div className="meta">{r.run}</div>}
                         </td>
-                        <td className={"num" + (r === best ? " strong" : "")}>{pct(r.metrics["hit@1"])}</td>
+                        <td className={"num" + (r === best ? " strong" : "")}>{pct(r.metrics["hit@1"])}<div className="ci">±{(propCI(r.metrics["hit@1"] ?? 0, r.per_question.length) * 100).toFixed(0)}</div></td>
                         <td className="num">{pct(r.metrics["hit@3"])}</td>
-                        <td className={"num" + (r === best ? " strong" : "")}>{(r.metrics.mrr ?? 0).toFixed(3)}</td>
+                        <td className={"num" + (r === best ? " strong" : "")}>{(r.metrics.mrr ?? 0).toFixed(3)}<div className="ci">±{meanCI(r.per_question.map(rr)).toFixed(3)}</div></td>
                         <td className="num">{r.metrics["ndcg@10"] != null ? r.metrics["ndcg@10"]!.toFixed(3) : "–"}</td>
                         <td className="num">{k50 ?? `>${kMax}`}</td>
                         <td className={"num" + (r === best ? " strong" : "")}>{k ?? `>${kMax}`}</td>
@@ -77,6 +84,13 @@ export function EmbeddingTable({ results, kMax, showSpeed = false }: { results: 
                           </td>
                         </>}
                         <td className="num">{e?.dim?.toLocaleString("th-TH") ?? "–"}</td>
+                        <td>{r === best ? <span className="small muted">อันดับ 1</span> : (() => {
+                          const [a, b] = aligned(r.per_question, best.per_question, rr);
+                          const t = pairedDiff(a, b);
+                          return <span className={"small " + (t.clear ? "diff-clear" : "muted")} title={`MRR ต่างกัน ${t.diff.toFixed(3)} (95%: ${t.lo.toFixed(3)} ถึง ${t.hi.toFixed(3)}) จาก ${a.length} คำถามเดียวกัน`}>
+                            {t.clear ? `แย่กว่าชัดเจน ${t.diff.toFixed(3)}` : "ไม่ชัด · อาจเท่ากัน"}
+                          </span>;
+                        })()}</td>
                       </tr>
                     );
                   })}

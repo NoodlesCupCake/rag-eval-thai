@@ -8,6 +8,7 @@ import { RankDistribution } from "./Ruler";
 import { Term } from "./Term";
 import { EmbeddingTable } from "./EmbeddingTable";
 import { RankScale } from "./RankScale";
+import { meanCI, propCI, rr } from "../stats";
 import { OpenInStore } from "./OpenInStore";
 import type { Run } from "../types";
 
@@ -218,8 +219,10 @@ function Stats({ results, lead, hasGen, hasNdcg }: { results: Row[]; lead: numbe
         <CfgLabel label={results[lead].label} />
       </div>
       <div className="stats">
-        <div className="card stat"><div className="label"><Term k="hit@3">Hit@3</Term></div>{fig(L["hit@3"])}<div className="cmp">{vsMedian("hit@3")}</div></div>
-        <div className="card stat"><div className="label"><Term k="mrr">MRR</Term></div><div className="fig">{(L.mrr ?? 0).toFixed(3)}</div><div className="cmp">{vsMedian("mrr", true)}</div></div>
+        <div className="card stat"><div className="label"><Term k="hit@3">Hit@3</Term></div>{fig(L["hit@3"])}
+          <div className="cmp">±{(propCI(L["hit@3"] ?? 0, results[lead].per_question.length) * 100).toFixed(0)} pt ที่ 95% · {results[lead].per_question.length} คำถาม</div><div className="cmp">{vsMedian("hit@3")}</div></div>
+        <div className="card stat"><div className="label"><Term k="mrr">MRR</Term></div><div className="fig">{(L.mrr ?? 0).toFixed(3)}</div>
+          <div className="cmp">±{meanCI(results[lead].per_question.map(rr)).toFixed(3)} ที่ 95%</div><div className="cmp">{vsMedian("mrr", true)}</div></div>
         {hasGen ? (
           <div className="card stat"><div className="label"><Term k="answer_correctness">LLM ตอบถูก</Term></div>{fig(L.answer_correctness)}<div className="cmp">อิงเอกสาร {pct(L.faithfulness)} · {L.n_judged} ข้อ</div></div>
         ) : hasNdcg ? (
