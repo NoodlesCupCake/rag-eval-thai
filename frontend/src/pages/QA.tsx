@@ -1,15 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ChunkMap } from "../components/ChunkMap";
-import { Download, Plus, Search, Trash2, Upload, X } from "lucide-react";
+import { Download, FileUp, Plus, Search, Trash2, Upload, X } from "lucide-react";
 import { api, errorText } from "../api";
 import { Busy, useAction, useFeedback } from "../feedback";
 import { useStatus } from "../status";
 import type { ChunkCfg, Doc, Job, QA, QASet } from "../types";
 import { SetPicker } from "../components/SetPicker";
+import { IngestPanel } from "../components/IngestPanel";
 import { Empty, ErrorNote, JobProgress, PageHead } from "../components/ui";
 
-type Panel = null | "add" | "generate";
+type Panel = null | "add" | "generate" | "file";
 
 export function QAPage() {
   const { refresh } = useStatus();
@@ -96,6 +97,7 @@ export function QAPage() {
         </button>
         <button className="btn" onClick={() => download("xlsx")} disabled={!items?.length}><Download className="icon" />Excel</button>
         <button className="btn ghost" onClick={() => download("csv")} disabled={!items?.length}>CSV</button>
+        <button className="btn" onClick={() => toggle("file")}><FileUp className="icon" />สร้างจากไฟล์</button>
         <button className="btn" onClick={() => toggle("generate")}>สร้างด้วย LLM</button>
         <button className="btn primary" onClick={() => toggle("add")}><Plus className="icon" />เพิ่มคำถาม</button>
         <input ref={fileRef} type="file" accept=".xlsx,.csv,.json" hidden
@@ -118,6 +120,7 @@ export function QAPage() {
         </div>
       )}
       {note && <div className="notice">{note}</div>}
+      {panel === "file" && <IngestPanel onClose={() => setPanel(null)} onDone={(id) => { loadSets(); chooseSet(id); refresh(); }} />}
       {panel === "add" && <AddQA docs={docs} setQuery={q} onDone={() => { setPanel(null); reload(); }} />}
       {panel === "generate" && <GenerateQA docs={docs} setId={setId} onDone={(m) => { setNote(m); reload(); }} />}
 

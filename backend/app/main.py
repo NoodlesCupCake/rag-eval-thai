@@ -138,6 +138,46 @@ def load_samples():
     return {"documents": len(added_docs), "qa": len(ok), "set": target["id"], "errors": errors}
 
 
+# ---------- any file -> QA set ----------
+
+@app.post("/api/ingest/preview", tags=["qa"])
+async def ingest_preview(file: UploadFile = File(...)):
+    """Upload any document or spreadsheet (size limit MAX_UPLOAD_MB). Returns what was
+    detected: sheets, headers, sample rows and the guessed question/answer columns."""
+    from . import ingest
+    raw = await file.read(int(ingest.MAX_UPLOAD_MB * 1024 * 1024) + 1)
+    try:
+        return ingest.preview(file.filename, raw)
+    except ingest.IngestError as e:
+        raise HTTPException(413 if "เกินขีดจำกัด" in str(e) else 400, str(e))
+    except Exception as e:
+        raise HTTPException(400, f"อ่านไฟล์ไม่ได้: {e}")
+
+
+class IngestSheet(BaseModel):
+    mode: str = "faq"  # faq | table | skip
+    mapping: dict[str, int | None] | None = None
+    columns: list[int] | None = None
+
+
+class IngestReq(BaseModel):
+    set_name: str | None = None
+    sheets: list[IngestSheet] = []
+    max_questions: int = Field(30, ge=1, le=500)
+    per_passage: int = Field(2, ge=1, le=5)
+    passage_chars: int = Field(800, ge=200, le=4000)
+
+
+@app.post("/api/ingest/{token}", tags=["qa"])
+def ingest_start(token: str, req: IngestReq):
+    """Build documents and a new QA set from a previewed file, as a background job."""
+    from . import ingest
+    try:
+        return runner.start_ingest(token, req.model_dump())
+    except (ValueError, ingest.IngestError) as e:
+        raise HTTPException(400, str(e))
+
+
 # ---------- QA sets ----------
 
 class SetIn(BaseModel):

@@ -169,16 +169,21 @@ def start_generate(doc_ids: list[str], per_passage: int, passage_chars: int, max
     if not llm.available():
         raise ValueError("ตั้งค่า LLM ในหน้าตั้งค่าก่อนสร้างคำถามอัตโนมัติ")
     docs = [d for d in storage.list_documents(include_text=True) if not doc_ids or d["id"] in doc_ids]
-    passages = []
-    for d in docs:
-        for c in chunk_text(d["id"], d["text"], "recursive", passage_chars, 0):
-            if len(c.text) > passage_chars * 0.3:
-                passages.append((d, c))
-    random.Random(1).shuffle(passages)
-    passages = passages[: max(1, -(-max_questions // per_passage))]
+    passages = _passages(docs, passage_chars, per_passage, max_questions)
     job = _job("generate", len(passages), "สร้างคำถามด้วย LLM")
     threading.Thread(target=_generate_qa, args=(job, passages, per_passage, max_questions, model, set_id), daemon=True).start()
     return job
+
+
+def _passages(docs: list[dict], passage_chars: int, per_passage: int, max_questions: int) -> list[tuple]:
+    """Passages to write questions from, spread over the documents at random."""
+    passages = []
+    for d in docs:
+        for c in chunk_text(d["id"], d["text"], "recursive", passage_chars, 0):
+            if len(c.text) > min(passage_chars * 0.3, 120):
+                passages.append((d, c))
+    random.Random(1).shuffle(passages)
+    return passages[: max(1, -(-max_questions // per_passage))]
 
 
 def _generate_qa(job, passages, per_passage, max_questions, model, set_id):
@@ -300,3 +305,63 @@ def _doc_upload(job, files):
     msg = f"เพิ่ม {len(added)} เอกสาร" + (f" · ไม่สำเร็จ {len(errors)}: " + ", ".join(f"{x['file']} ({x['error']})" for x in errors[:3]) if errors else "")
     _update(job, status="done" if added or not errors else "failed", message=msg,
             error=None if added or not errors else msg, result={"added": added, "errors": errors})
+
+
+# ---------- any file -> documents + QA set ----------
+
+def start_ingest(token: str, opts: dict) -> dict:
+    """opts: set_name, and per sheet {mode: faq|table|skip, mapping, columns}; for text and
+    table modes also max_questions, per_passage, passage_chars. Needs an LLM unless every
+    sheet is an FAQ."""
+    from . import ingest
+    up = ingest.peek(token)  # keep the upload if we refuse, so the person can fix and retry
+    needs_llm = "text" in up or any(s.get("mode", "faq") in ("table", "text") for s in opts.get("sheets", []))
+    if needs_llm and not llm.available():
+        raise ValueError("ไฟล์นี้ต้องให้ LLM เขียนคำถาม ตั้งค่า LLM ในหน้าตั้งค่าก่อน")
+    up = ingest.take(token)
+    job = _job("ingest", 0, f"สร้างชุดคำถามจาก {up['filename']}")
+    threading.Thread(target=_ingest, args=(job, up, opts), daemon=True).start()
+    return job
+
+
+def _ingest(job, up, opts):
+    from . import ingest
+    try:
+        st = storage.create_set(opts.get("set_name") or up["filename"].rsplit(".", 1)[0])
+        _update(job, message="กำลังสร้างเอกสาร", result={"set": st["id"]})
+        base = up["filename"].rsplit(".", 1)[0]
+        faq_items, gen_docs = [], []
+        if "text" in up:
+            gen_docs.append(storage.add_document(up["filename"], up["text"]))
+        for i, sheet in enumerate(up.get("sheets", [])):
+            o = (opts.get("sheets") or [{}] * (i + 1))[i] if i < len(opts.get("sheets") or []) else {}
+            mode = o.get("mode", "faq")
+            if mode == "skip":
+                continue
+            name = f"{base} · {sheet['name']}.md" if len(up["sheets"]) > 1 else f"{base}.md"
+            if mode == "faq":
+                text, items = ingest.faq_to_document(sheet, o.get("mapping") or ingest.detect_mapping(sheet["headers"]))
+                doc = storage.add_document(name, text)
+                for it in items:
+                    s, e = it.pop("evidence_span")
+                    faq_items.append(it | {"evidence": [{"doc_id": doc["id"], "start": s, "end": e}], "source": "file"})
+            else:
+                gen_docs.append(storage.add_document(name, ingest.table_to_document(sheet, o.get("columns"))))
+        if faq_items:
+            storage.add_qa(st["id"], faq_items)
+        if not gen_docs:
+            _update(job, status="done", total=1, done=1, message=f"เพิ่ม {len(faq_items)} คำถามจากตาราง เข้าชุด “{st['name']}”",
+                    result={"set": st["id"], "added": len(faq_items)})
+            return
+        max_q = int(opts.get("max_questions", 30))
+        per = int(opts.get("per_passage", 2))
+        passages = _passages(gen_docs, int(opts.get("passage_chars", 800)), per, max_q)
+        _update(job, total=len(passages), done=0, message=f"LLM กำลังเขียนคำถามจาก {len(passages)} ช่วง")
+        _generate_qa(job, passages, per, max_q, None, st["id"])
+        with _jobs_lock:
+            job["result"] = (job.get("result") or {}) | {"set": st["id"]}
+            if faq_items:
+                job["message"] = f"{job['message']} · จากตาราง {len(faq_items)} ข้อ"
+    except Exception as e:
+        traceback.print_exc()
+        _update(job, status="failed", error=str(e))
