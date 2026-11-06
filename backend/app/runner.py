@@ -368,3 +368,26 @@ def _ingest(job, up, opts):
     except Exception as e:
         traceback.print_exc()
         _update(job, status="failed", error=str(e))
+
+
+# ---------- embedding store ----------
+
+def start_index(chunking: dict, model: str) -> dict:
+    job = _job("index", 4, f"สร้าง index {model.split('/')[-1]}")
+    threading.Thread(target=_index, args=(job, chunking, model), daemon=True).start()
+    return job
+
+
+def _index(job, chunking, model):
+    from . import indexes
+    steps = {"n": 0}
+
+    def step(msg):
+        steps["n"] += 1
+        _update(job, message=msg, done=min(steps["n"] - 1, 3))
+    try:
+        meta = indexes.build(chunking, model, step)
+        _update(job, status="done", done=4, message=f"{meta['n_chunks']} chunks · {meta['dim']} มิติ", result={"index": meta["id"]})
+    except Exception as e:
+        traceback.print_exc()
+        _update(job, status="failed", error=str(e))

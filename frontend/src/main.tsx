@@ -20,6 +20,8 @@ import { ComparePage } from "./pages/Compare";
 import { ChatPage } from "./pages/Chat";
 import { MethodPage } from "./pages/Method";
 import { RagPage } from "./pages/Rag";
+import { IndexesPage } from "./pages/Indexes";
+import { IndexDetailPage } from "./pages/IndexDetail";
 import { StartPage, isDismissed, setupSteps } from "./pages/Start";
 import { useStatus } from "./status";
 
@@ -47,6 +49,8 @@ const router = createBrowserRouter([
       { path: "compare", element: <ComparePage /> },
       { path: "chat", element: <ChatPage /> },
       { path: "rag", element: <RagPage /> },
+      { path: "indexes", element: <IndexesPage /> },
+      { path: "indexes/:id", element: <IndexDetailPage /> },
       { path: "method", element: <MethodPage /> },
       { path: "*", element: <Navigate to="/documents" replace /> },
     ],

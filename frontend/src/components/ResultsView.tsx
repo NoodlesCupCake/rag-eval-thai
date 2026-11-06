@@ -8,7 +8,7 @@ import { RankDistribution } from "./Ruler";
 import { Term } from "./Term";
 import { EmbeddingTable } from "./EmbeddingTable";
 import { RankScale } from "./RankScale";
-import { EmbeddingMap } from "./EmbeddingMap";
+import { OpenInStore } from "./OpenInStore";
 import type { Run } from "../types";
 
 /* Stats, charts and the comparison table for a set of results: one run, or several runs
@@ -131,7 +131,7 @@ export function ResultsView({ results, kMax, focus, setFocus, baseline, setBasel
       </div>
 
       <EmbeddingTable results={R} kMax={kMax} showSpeed={extra} />
-      {runId && <EmbeddingMap runId={runId} index={f} result={R[f]} />}
+      {runId && <OpenInStore result={R[f]} />}
 
       <div className="card">
         <div className="card-head">

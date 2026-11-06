@@ -25,6 +25,7 @@ TAGS = [
     {"name": "documents", "description": "เอกสารที่ RAG จะค้น และตัวอย่างการตัด chunk"},
     {"name": "qa", "description": "ชุดคำถาม: คำถาม คำตอบอ้างอิง และ evidence เป็นตำแหน่งตัวอักษรในเอกสาร"},
     {"name": "runs", "description": "รัน benchmark และอ่านผล Hit@k, MRR, nDCG@10, latency"},
+    {"name": "embedding store", "description": "คลัง embedding: เก็บเวกเตอร์ของทุก chunk ต่อ (เอกสาร × วิธีตัด × โมเดล) ดูแผนที่และค้นได้"},
     {"name": "playground", "description": "ถามคำถามเดียวแล้วดู chunk ที่ค้นได้และคำตอบของ LLM"},
     {"name": "jobs", "description": "งานเบื้องหลัง (นำเข้า อัปโหลด สร้างคำถาม benchmark) และความคืบหน้า"},
     {"name": "settings", "description": "ตั้งค่า LLM: Claude หรือ server ที่รองรับ OpenAI API เช่น Ollama"},
@@ -442,6 +443,77 @@ def emb_provider_delete(pid: str):
     return {"ok": True}
 
 
+# ---------- embedding store ----------
+
+class IndexReq(BaseModel):
+    chunking: ChunkCfg
+    model: str
+
+
+@app.get("/api/indexes", tags=["embedding store"])
+def indexes_list():
+    """Saved embedding indexes (documents × chunking × model). stale = documents changed since."""
+    from . import indexes
+    return indexes.list_indexes()
+
+
+@app.post("/api/indexes", tags=["embedding store"])
+def indexes_create(req: IndexReq):
+    """Build an index in the background, or return the existing one for the same inputs."""
+    from . import indexes
+    if req.chunking.strategy not in STRATEGIES:
+        raise HTTPException(400, f"unknown strategy {req.chunking.strategy}")
+    existing = indexes.find(req.chunking.model_dump(), req.model)
+    if existing:
+        return {"existing": existing["id"]}
+    return runner.start_index(req.chunking.model_dump(), req.model)
+
+
+@app.get("/api/indexes/{index_id}", tags=["embedding store"])
+def indexes_get(index_id: str):
+    """Metadata and every chunk with its 2D coordinates (pca, tsne)."""
+    from . import indexes
+    m = indexes.get(index_id)
+    if not m:
+        raise HTTPException(404, "ไม่พบ index")
+    fp = indexes.docs_fingerprint(storage.list_documents(include_text=True))
+    return m | {"stale": m["docs_fp"] != fp}
+
+
+class IndexSearch(BaseModel):
+    query: str = Field(min_length=1)
+    k: int = Field(5, ge=1, le=50)
+
+
+@app.post("/api/indexes/{index_id}/search", tags=["embedding store"])
+def indexes_search(index_id: str, req: IndexSearch):
+    """Embed a query with the index's model; nearest chunks by cosine, and where it sits on the map."""
+    from . import indexes
+    try:
+        return indexes.search(index_id, req.query, req.k)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+    except Exception as e:
+        raise HTTPException(400, f"ค้นไม่ได้: {e}")
+
+
+@app.get("/api/indexes/{index_id}/neighbors/{chunk_id}", tags=["embedding store"])
+def indexes_neighbors(index_id: str, chunk_id: str, k: int = 5):
+    from . import indexes
+    try:
+        return indexes.neighbors(index_id, chunk_id, k)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+
+
+@app.delete("/api/indexes/{index_id}", tags=["embedding store"])
+def indexes_delete(index_id: str):
+    from . import indexes
+    if not indexes.delete(index_id):
+        raise HTTPException(404, "ไม่พบ index")
+    return {"ok": True}
+
+
 # ---------- runs ----------
 
 class ChunkCfg(BaseModel):
@@ -545,70 +617,6 @@ def run_create(req: RunReq):
         return runner.start_run(req.model_dump())
     except ValueError as e:
         raise HTTPException(400, str(e))
-
-
-class MapReq(BaseModel):
-    result: int = Field(0, ge=0)
-    method: str = Field("tsne", description="tsne (clusters) or pca (linear)")
-
-
-@app.post("/api/runs/{run_id}/map", tags=["runs"])
-def run_map(run_id: str, req: MapReq):
-    """2D map of one dense/hybrid result: every chunk and every question embedded with
-    the result's model, projected to x, y. Uses the current documents."""
-    import numpy as np
-    from .retrieval import DenseRetriever
-    run = storage.get_run(run_id)
-    if not run or req.result >= len(run.get("results", [])):
-        raise HTTPException(404, "ไม่พบผล")
-    res = run["results"][req.result]
-    rcfg, ccfg = res["retriever"], res["chunking"]
-    if rcfg["type"] == "bm25" or not rcfg.get("model"):
-        raise HTTPException(400, "BM25 ไม่ใช้ embedding จึงไม่มีแผนที่")
-    docs = storage.list_documents(include_text=True)
-    chunks = chunk_documents(docs, ccfg["strategy"], ccfg["size"], ccfg.get("overlap", 0))
-    per_q = res["per_question"]
-    keep = {g for p in per_q for g in p.get("gold", [])} | {c.get("chunk") for p in per_q for c in p["retrieved"][:3]}
-    if len(chunks) > 1500:  # keep the map readable and fast: the relevant chunks plus a sample
-        import random
-        rest = [c for c in chunks if c.id not in keep]
-        chunks = [c for c in chunks if c.id in keep] + random.Random(0).sample(rest, max(0, 1500 - len(keep)))
-    try:
-        dense = DenseRetriever(rcfg["model"])
-        dense.index(chunks)
-        C = dense.matrix
-        qtexts = [run.get("questions", {}).get(p["qa_id"], {}).get("question", "") for p in per_q]
-        Q = np.stack([dense.embedder.query(t) for t in qtexts]) if qtexts else np.zeros((0, C.shape[1]))
-    except Exception as e:
-        raise HTTPException(400, f"สร้าง embedding ไม่ได้: {e}")
-    # Query and passage embeddings sit in separate regions (the "modality gap", strong with
-    # e5's query:/passage: prefixes). Centre each group on its own mean so questions land
-    # among the chunks they match instead of in a cluster of their own.
-    C = C - C.mean(axis=0)
-    if len(Q):
-        Q = Q - Q.mean(axis=0)
-    X = np.vstack([C, Q]).astype(np.float64)
-    X = X / np.clip(np.linalg.norm(X, axis=1, keepdims=True), 1e-12, None)
-    n = len(X)
-    if req.method == "pca" or n < 8:
-        Xc = X - X.mean(axis=0)
-        _, _, vt = np.linalg.svd(Xc, full_matrices=False)
-        Y = Xc @ vt[:2].T
-        method = "pca"
-    else:
-        from sklearn.manifold import TSNE
-        Y = TSNE(n_components=2, perplexity=float(min(30, max(5, (n - 1) // 3))), init="pca",
-                 metric="cosine", random_state=0).fit_transform(X)
-        method = "tsne"
-    Y = (Y - Y.min(axis=0)) / np.clip(Y.max(axis=0) - Y.min(axis=0), 1e-9, None)
-    names = {d["id"]: d["name"] for d in docs}
-    out_chunks = [{"id": c.id, "doc_id": c.doc_id, "doc_name": names.get(c.doc_id), "number": int(c.id.rsplit(":", 1)[1]) + 1,
-                   "text": c.text[:160], "x": float(Y[i, 0]), "y": float(Y[i, 1])} for i, c in enumerate(chunks)]
-    out_q = [{"qa_id": p["qa_id"], "question": qtexts[i], "hit_rank": p["hit_rank"], "gold": p.get("gold", []),
-              "top": [c.get("chunk") for c in p["retrieved"][:3]],
-              "x": float(Y[len(chunks) + i, 0]), "y": float(Y[len(chunks) + i, 1])} for i, p in enumerate(per_q)]
-    return {"method": method, "model": rcfg["model"], "label": res["label"], "chunks": out_chunks, "questions": out_q,
-            "docs": [{"id": d["id"], "name": d["name"]} for d in docs]}
 
 
 @app.get("/api/runs", tags=["runs"])

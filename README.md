@@ -16,6 +16,10 @@ Two separate evaluations on the same documents and QA sets:
   answer whether retrieval missed the chunk or the LLM answered badly
 - **Any LLM:** Claude, or any OpenAI-compatible server (Ollama, LM Studio, vLLM, OpenAI).
   Set the base URL, API key and model on the **ตั้งค่า LLM** page
+- **คลัง Embedding (embedding store):** build an index per documents × chunking × model, saved
+  under `data/indexes/`, and browse it: every chunk on an x/y map (t-SNE or PCA, coloured by
+  document), a search box that drops your query onto the map with its nearest chunks, and
+  each chunk's nearest neighbours. Like looking inside a vector database
 - **Questions from any file:** drop an Excel, CSV, PDF, Word or text file (20 MB max,
   `MAX_UPLOAD_MB`). Tables with question/answer columns (Thai or English headers, detected
   automatically) become questions directly; other tables and documents go to the LLM,

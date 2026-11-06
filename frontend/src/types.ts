@@ -92,7 +92,7 @@ export interface Status {
 
 export interface Job {
   id: string;
-  kind: "run" | "generate" | "import" | "upload";
+  kind: "run" | "generate" | "import" | "upload" | "ingest" | "index";
   title?: string;
   result?: unknown;
   status: "running" | "done" | "failed";
