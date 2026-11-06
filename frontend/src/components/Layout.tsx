@@ -1,4 +1,4 @@
-import { FileText, Flag, Gauge, ListChecks, Play, Settings2 } from "lucide-react";
+import { BookOpen, Braces, FileText, Flag, Gauge, ListChecks, MessageSquare, Play, Settings2 } from "lucide-react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useEffect } from "react";
 import { useStatus } from "../status";
@@ -28,7 +28,9 @@ export function Layout() {
     { to: "/qa", label: "ชุดคำถาม", Icon: ListChecks, count: c?.qa },
     { to: "/bench", label: "Benchmark", Icon: Play },
     { to: "/runs", label: "ผลลัพธ์", Icon: Gauge, count: c?.runs },
+    { to: "/chat", label: "ลองถาม", Icon: MessageSquare },
     { to: "/settings", label: "ตั้งค่า LLM", Icon: Settings2 },
+    { to: "/method", label: "วิธีการวัด", Icon: BookOpen },
   ];
 
   return (
@@ -66,6 +68,9 @@ export function Layout() {
             </span>
           </NavLink>
           <div className="meta" style={{ paddingLeft: 14 }}>embedding · {status?.device ?? "…"}</div>
+          <a className="row small sec api-link" href="/api/docs" target="_blank" rel="noreferrer">
+            <Braces className="icon" />API docs
+          </a>
         </div>
       </aside>
       <main className="main">

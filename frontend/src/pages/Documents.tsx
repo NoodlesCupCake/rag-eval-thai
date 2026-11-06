@@ -6,52 +6,55 @@ import { useStatus } from "../status";
 import type { ChunkPreview, Doc, DocFull } from "../types";
 import { num } from "../format";
 import { Empty, ErrorNote, PageHead } from "../components/ui";
+import { Busy, useAction, useFeedback } from "../feedback";
+import type { Job } from "../types";
 
 export function DocumentsPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { refresh } = useStatus();
   const [docs, setDocs] = useState<Doc[] | null>(null);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const { track, jobs } = useFeedback();
+  const { run, busy } = useAction();
+  const uploading = busy("upload") || jobs.some((j) => j.kind === "upload" && j.status === "running");
 
   const load = () => api.get<Doc[]>("/documents").then(setDocs).catch((e) => setError(errorText(e)));
   useEffect(() => { load(); }, []);
   const selected = id ?? docs?.[0]?.id;
 
-  async function act(fn: () => Promise<unknown>) {
-    setBusy(true);
-    setError(null);
-    try {
-      await fn();
-      await load();
-      refresh();
-    } catch (e) {
-      setError(errorText(e));
-    }
-    setBusy(false);
+  async function loadSamples() {
+    await run("samples", () => api.post<{ documents: number; qa: number }>("/samples"),
+              (r) => r.documents || r.qa ? `เพิ่ม ${r.documents} เอกสาร และ ${r.qa} คำถามจากชุดตัวอย่าง` : "ชุดตัวอย่างโหลดไว้แล้ว");
+    await load();
+    refresh();
   }
-
-  const loadSamples = () => act(() => api.post("/samples"));
+  async function upload(files: File[]) {
+    const job = await run("upload", () => api.upload<Job>("/documents", files));
+    if (job) track(job, () => load()); // text extraction runs in the background; the tray shows progress
+  }
   async function remove(docId: string) {
     if (!confirm("ลบเอกสารนี้? คำถามที่อ้างถึงเอกสารนี้จะถูกลบด้วย")) return;
-    await act(() => api.del("/documents/" + docId));
+    setDocs((ds) => ds?.filter((d) => d.id !== docId) ?? ds);
     if (id === docId) navigate("/documents");
+    await run("del:" + docId, () => api.del("/documents/" + docId), "ลบเอกสารแล้ว");
+    await load();
+    refresh();
   }
 
   return (
     <div className="stack">
       <PageHead title="เอกสาร" sub="คลังเอกสารที่ RAG จะค้น เลือกเอกสารเพื่อดูว่าแต่ละวิธีตัด chunk ตรงไหน และตัดกลางคำกี่ครั้ง">
-        <button className="btn" onClick={loadSamples} disabled={busy}>โหลดชุดตัวอย่าง</button>
-        <button className="btn primary" onClick={() => fileRef.current?.click()} disabled={busy}>
-          <Upload className="icon" />อัปโหลด
+        <button className="btn" onClick={loadSamples} disabled={busy("samples")}><Busy busy={busy("samples")} label="กำลังโหลด">โหลดชุดตัวอย่าง</Busy></button>
+        <button className="btn primary" onClick={() => fileRef.current?.click()} disabled={uploading}>
+          <Busy busy={uploading} label="กำลังอัปโหลด"><Upload className="icon" />อัปโหลด</Busy>
         </button>
         <input ref={fileRef} type="file" multiple accept=".txt,.md,.pdf" hidden
                onChange={(e) => {
                  const files = [...(e.target.files ?? [])];
                  e.target.value = "";
-                 if (files.length) act(() => api.upload("/documents", files));
+                 if (files.length) upload(files);
                }} />
       </PageHead>
       <ErrorNote error={error} />
@@ -60,7 +63,7 @@ export function DocumentsPage() {
         <div className="card">
           <Empty title="ยังไม่มีเอกสาร">
             <p>อัปโหลดไฟล์ .txt .md หรือ .pdf หรือเริ่มจากชุดตัวอย่าง เอกสารสมมติภาษาไทย 3 ฉบับพร้อมคำถาม 29 ข้อ</p>
-            <button className="btn accent" onClick={loadSamples} disabled={busy}>โหลดชุดตัวอย่าง</button>
+            <button className="btn accent" onClick={loadSamples} disabled={busy("samples")}><Busy busy={busy("samples")} label="กำลังโหลด">โหลดชุดตัวอย่าง</Busy></button>
           </Empty>
         </div>
       )}

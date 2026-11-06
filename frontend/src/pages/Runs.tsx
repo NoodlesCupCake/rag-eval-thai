@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { Play, Trash2 } from "lucide-react";
 import { api } from "../api";
 import { useStatus } from "../status";
+import { useAction } from "../feedback";
 import type { RunSummary, SummaryRow } from "../types";
 import { date, pct } from "../format";
 import { CfgLabel, Empty, PageHead } from "../components/ui";
@@ -18,9 +19,12 @@ export function RunsPage() {
   const load = () => api.get<RunSummary[]>("/runs").then(setRuns);
   useEffect(() => { load(); }, []);
 
+  const { run } = useAction();
   async function remove(id: string) {
     if (!confirm("ลบผลการรันนี้?")) return;
-    await api.del("/runs/" + id);
+    setRuns((rs) => rs?.filter((r) => r.id !== id) ?? rs);
+    setPicked((p) => p.filter((x) => x !== id));
+    await run("del", () => api.del("/runs/" + id), "ลบผลการรันแล้ว");
     load();
     refresh();
   }

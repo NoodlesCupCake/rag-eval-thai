@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ChunkMap } from "../components/ChunkMap";
-import { Download, Plus, Search, Trash2, Upload } from "lucide-react";
-import { api, errorText, pollJob } from "../api";
+import { Download, Plus, Search, Trash2, Upload, X } from "lucide-react";
+import { api, errorText } from "../api";
+import { Busy, useAction, useFeedback } from "../feedback";
 import { useStatus } from "../status";
 import type { ChunkCfg, Doc, Job, QA } from "../types";
 import { Empty, ErrorNote, JobProgress, PageHead } from "../components/ui";
@@ -22,6 +23,10 @@ export function QAPage() {
   const setView = (v: "table" | "map") => setParams(v === "map" ? { view: "map" } : {}, { replace: true });
   const [cfg, setCfg] = useState<ChunkCfg>({ strategy: "recursive", size: 400, overlap: 50 });
   const fileRef = useRef<HTMLInputElement>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [importJob, setImportJob] = useState<Job | null>(null);
+  const { track, jobs, toast } = useFeedback();
+  const { run, busy } = useAction();
 
   const load = () =>
     api.get<QA[]>(`/qa?strategy=${cfg.strategy}&size=${cfg.size}&overlap=${cfg.overlap}`).then(setItems).catch((e) => setError(errorText(e)));
@@ -35,21 +40,37 @@ export function QAPage() {
   const chunkHref = (docId: string, n: number) =>
     `/documents/${docId}?strategy=${cfg.strategy}&size=${cfg.size}&overlap=${cfg.overlap}&chunk=${n}`;
 
-  async function importFile(f: File) {
-    setError(null);
+  // Imports run as a background job; the tray shows progress, this page shows the result.
+  async function importFile(f: File, mode: "merge" | "replace") {
+    if (mode === "replace" && items?.length && !confirm(`แทนที่คำถามทั้งหมด ${items.length} ข้อด้วยไฟล์นี้? คำถามที่ไม่อยู่ในไฟล์จะถูกลบ`)) return;
+    setPendingFile(null);
     setNote(null);
-    try {
-      const r = await api.upload<{ added: number; errors: { row: number; error: string }[] }>("/qa/import", [f], "file");
-      const skipped = r.errors.length ? ` · ข้าม ${r.errors.length} แถว: ${r.errors.slice(0, 3).map((x) => `แถว ${x.row} ${x.error}`).join(", ")}` : "";
-      setNote(`นำเข้า ${r.added} ข้อ${skipped}`);
+    const job = await run("import", () => api.upload<Job>(`/qa/import?mode=${mode}`, [f], "file"));
+    if (!job) return;
+    setImportJob(job);
+    track(job, (done) => {
+      const r = done.result as { errors: { row: number; error: string }[] } | undefined;
+      if (r?.errors.length) setNote(`แถวที่นำเข้าไม่ได้: ${r.errors.slice(0, 5).map((x) => `แถว ${x.row} ${x.error}`).join(" · ")}${r.errors.length > 5 ? ` และอีก ${r.errors.length - 5} แถว` : ""}`);
       reload();
-    } catch (e) {
-      setError(errorText(e));
-    }
+    });
   }
-  async function remove(id: string) { await api.del("/qa/" + id); reload(); }
+  const liveImport = importJob ? jobs.find((j) => j.id === importJob.id) ?? null : null;
+
+  async function remove(id: string) {
+    setItems((xs) => xs?.filter((q) => q.id !== id) ?? xs); // show it gone right away
+    const ok = await run("del:" + id, () => api.del("/qa/" + id), "ลบคำถามแล้ว");
+    if (ok === undefined) load();
+    refresh();
+  }
   async function clearAll() {
-    if (items && confirm(`ลบคำถามทั้งหมด ${items.length} ข้อ?`)) { await api.del("/qa"); reload(); }
+    if (!items || !confirm(`ลบคำถามทั้งหมด ${items.length} ข้อ?`)) return;
+    setItems([]);
+    await run("clear", () => api.del("/qa"), "ลบคำถามทั้งหมดแล้ว");
+    reload();
+  }
+  function download(format: "xlsx" | "csv") {
+    window.location.href = `/api/qa/export?format=${format}`;
+    toast(format === "xlsx" ? "กำลังดาวน์โหลด qa.xlsx" : "กำลังดาวน์โหลด qa.csv", "info");
   }
 
   const shown = (items ?? []).filter((q) => !query || q.question.includes(query) || q.answer.includes(query) || q.evidence_text.includes(query));
@@ -58,14 +79,31 @@ export function QAPage() {
   return (
     <div className="stack">
       <PageHead title="ชุดคำถาม" sub="แต่ละข้อมีคำถาม คำตอบอ้างอิง และ evidence คือข้อความในเอกสารที่ใช้ตอบ ระบบเทียบตำแหน่ง evidence กับ chunk ที่ค้นเจอ ชุดเดียวจึงใช้ได้กับทุกวิธีตัด chunk">
-        <button className="btn" onClick={() => fileRef.current?.click()}><Upload className="icon" />นำเข้า</button>
-        <a className="btn" href="/api/qa/export?format=csv"><Download className="icon" />CSV</a>
+        <button className="btn" onClick={() => fileRef.current?.click()} disabled={liveImport?.status === "running"}>
+          <Busy busy={busy("import") || liveImport?.status === "running"} label="กำลังนำเข้า"><Upload className="icon" />นำเข้า</Busy>
+        </button>
+        <button className="btn" onClick={() => download("xlsx")} disabled={!items?.length}><Download className="icon" />Excel</button>
+        <button className="btn ghost" onClick={() => download("csv")} disabled={!items?.length}>CSV</button>
         <button className="btn" onClick={() => toggle("generate")}>สร้างด้วย LLM</button>
         <button className="btn primary" onClick={() => toggle("add")}><Plus className="icon" />เพิ่มคำถาม</button>
-        <input ref={fileRef} type="file" accept=".csv,.json" hidden
-               onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) importFile(f); }} />
+        <input ref={fileRef} type="file" accept=".xlsx,.csv,.json" hidden
+               onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) setPendingFile(f); }} />
       </PageHead>
       <ErrorNote error={error} />
+      {pendingFile && (
+        <div className="card card-pad import-bar enter">
+          <span className="grow">นำเข้า <span className="mono">{pendingFile.name}</span> แถวที่มี id ตรงกับคำถามเดิมจะถูกอัปเดต แถวที่ใส่ use = no จะถูกข้าม</span>
+          <button className="btn primary" onClick={() => importFile(pendingFile, "merge")}>รวมกับชุดเดิม</button>
+          <button className="btn" onClick={() => importFile(pendingFile, "replace")}>แทนที่ทั้งชุด</button>
+          <button className="btn ghost icon-only" aria-label="ยกเลิก" onClick={() => setPendingFile(null)}><X className="icon" /></button>
+        </div>
+      )}
+      {liveImport && liveImport.status === "running" && (
+        <div className="card card-pad stack-8">
+          <div className="small sec">{liveImport.title}</div>
+          <JobProgress job={liveImport} unit="แถว" />
+        </div>
+      )}
       {note && <div className="notice">{note}</div>}
       {panel === "add" && <AddQA docs={docs} onDone={() => { setPanel(null); reload(); }} />}
       {panel === "generate" && <GenerateQA docs={docs} onDone={(m) => { setNote(m); reload(); }} />}
@@ -86,7 +124,7 @@ export function QAPage() {
               <input className="input" style={{ width: 220, height: 32, paddingLeft: 32 }} placeholder="ค้นหา"
                      value={query} onChange={(e) => setQuery(e.target.value)} />
             </div>}
-            {!!items?.length && <button className="btn ghost sm" onClick={clearAll}>ลบทั้งหมด</button>}
+            {!!items?.length && <button className="btn ghost sm" onClick={clearAll} disabled={busy("clear")}><Busy busy={busy("clear")}>ลบทั้งหมด</Busy></button>}
           </div>
         </div>
         {items && items.length === 0 && (
@@ -139,16 +177,21 @@ export function QAPage() {
 function AddQA({ docs, onDone }: { docs: Doc[]; onDone: () => void }) {
   const [f, setF] = useState({ question: "", answer: "", evidence: "", document_id: "" });
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const { toast } = useFeedback();
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
 
   async function save() {
     setError(null);
+    setSaving(true);
     try {
       await api.post("/qa", { ...f, document_id: f.document_id || null });
+      toast("เพิ่มคำถามแล้ว");
       onDone();
     } catch (e) {
-      setError(errorText(e));
+      setError(errorText(e)); // shown next to the form, since it is usually about the evidence text
     }
+    setSaving(false);
   }
 
   return (
@@ -171,7 +214,7 @@ function AddQA({ docs, onDone }: { docs: Doc[]; onDone: () => void }) {
         </label>
       </div>
       <ErrorNote error={error} />
-      <div className="actions"><button className="btn primary" onClick={save} disabled={!f.question || !f.evidence}>บันทึก</button></div>
+      <div className="actions"><button className="btn primary" onClick={save} disabled={saving || !f.question || !f.evidence}><Busy busy={saving} label="กำลังบันทึก">บันทึก</Busy></button></div>
     </div>
   );
 }
@@ -180,22 +223,21 @@ function GenerateQA({ docs, onDone }: { docs: Doc[]; onDone: (msg: string) => vo
   const { status } = useStatus();
   const [f, setF] = useState({ max_questions: 20, per_passage: 2, passage_chars: 800 });
   const [picked, setPicked] = useState<string[]>([]);
-  const [job, setJob] = useState<Job | null>(null);
+  const [jobId, setJobId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { track, jobs } = useFeedback();
+  const { run, busy } = useAction();
+  const job = jobs.find((j) => j.id === jobId) ?? null;
   const ready = !!status?.llm_available;
-  const running = job?.status === "running";
+  const running = busy("gen") || job?.status === "running";
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: Number(e.target.value) });
 
   async function start() {
     setError(null);
-    try {
-      const j = await api.post<Job>("/qa/generate", { ...f, document_ids: picked });
-      const done = await pollJob(j.id, setJob);
-      if (done.status === "failed") setError(done.error);
-      else onDone(done.message);
-    } catch (e) {
-      setError(errorText(e));
-    }
+    const j = await run("gen", () => api.post<Job>("/qa/generate", { ...f, document_ids: picked }));
+    if (!j) return;
+    setJobId(j.id);
+    track(j, (done) => onDone(done.message)); // keeps running in the background if you leave the page
   }
 
   return (
@@ -225,7 +267,7 @@ function GenerateQA({ docs, onDone }: { docs: Doc[]; onDone: (msg: string) => vo
       <JobProgress job={job} unit="ช่วง" />
       <ErrorNote error={error} />
       <div className="actions">
-        <button className="btn primary" onClick={start} disabled={!ready || running}>{running ? "กำลังสร้าง" : "สร้างคำถาม"}</button>
+        <button className="btn primary" onClick={start} disabled={!ready || running}><Busy busy={running} label="กำลังสร้าง">สร้างคำถาม</Busy></button>
       </div>
     </div>
   );

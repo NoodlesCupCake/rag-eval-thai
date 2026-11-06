@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from . import llm, storage
 from .chunking import chunk_documents, chunk_text, label as chunk_label
 from .metrics import aggregate, gold_chunks, ndcg, score_question
-from .qa import locate_evidence
+from .qa import locate_evidence, parse_upload, read_document_file, resolve_row
 from .retrieval import build_retriever, retriever_label, timed_search
 
 _jobs: dict[str, dict] = {}
@@ -23,8 +23,14 @@ def get_job(job_id: str) -> dict | None:
         return dict(j) if j else None
 
 
-def _job(kind: str, total: int) -> dict:
-    j = {"id": storage.new_id("job"), "kind": kind, "status": "running", "done": 0, "total": total,
+def list_jobs(limit: int = 20) -> list[dict]:
+    with _jobs_lock:
+        jobs = sorted(_jobs.values(), key=lambda j: j["started_at"], reverse=True)[:limit]
+        return [dict(j) for j in jobs]
+
+
+def _job(kind: str, total: int, title: str = "") -> dict:
+    j = {"id": storage.new_id("job"), "kind": kind, "title": title, "status": "running", "done": 0, "total": total,
          "message": "", "error": None, "result": None, "started_at": storage.now()}
     with _jobs_lock:
         _jobs[j["id"]] = j
@@ -62,7 +68,7 @@ def start_run(spec: dict) -> dict:
            "doc_names": {d["id"]: d["name"] for d in docs},
            "questions": {q["id"]: {k: q[k] for k in ("question", "answer", "evidence")} for q in qa}}
     storage.save_run(run)
-    job = _job("run", len(configs) * len(qa))
+    job = _job("run", len(configs) * len(qa), f"Benchmark · {run['name']}")
     job["run_id"] = run["id"]
     threading.Thread(target=_run_benchmark, args=(job, run, configs, docs, qa), daemon=True).start()
     return job
@@ -152,7 +158,7 @@ def start_generate(doc_ids: list[str], per_passage: int, passage_chars: int, max
                 passages.append((d, c))
     random.Random(1).shuffle(passages)
     passages = passages[: max(1, -(-max_questions // per_passage))]
-    job = _job("generate", len(passages))
+    job = _job("generate", len(passages), "สร้างคำถามด้วย LLM")
     threading.Thread(target=_generate_qa, args=(job, passages, per_passage, max_questions, model), daemon=True).start()
     return job
 
@@ -188,3 +194,91 @@ def _generate_qa(job, passages, per_passage, max_questions, model):
     except Exception as e:
         traceback.print_exc()
         _update(job, status="failed", error=str(e))
+
+
+# ---------- QA import ----------
+
+def start_import(filename: str, raw: bytes, mode: str) -> dict:
+    """Import a QA file in the background. mode = "merge" updates rows whose id exists and
+    adds the rest; "replace" makes the file the whole QA set."""
+    job = _job("import", 0, f"นำเข้า {filename}")
+    threading.Thread(target=_import, args=(job, filename, raw, mode), daemon=True).start()
+    return job
+
+
+def _import(job, filename, raw, mode):
+    try:
+        _update(job, message="กำลังอ่านไฟล์")
+        rows = parse_upload(filename, raw)
+        used = [(n, r) for n, r in enumerate(rows, 2) if r.get("use", True)]
+        _update(job, total=len(used), message=f"ตรวจ evidence {len(used)} แถว" + (f" · ข้าม {len(rows) - len(used)} แถวที่ use = no" if len(rows) > len(used) else ""))
+        docs = storage.list_documents(include_text=True)
+        ok, errors = [], []
+        for n, r in used:
+            item, err = resolve_row(n, r, docs)
+            (ok.append(item) if item else errors.append(err))
+            _update(job, done=job["done"] + 1)
+
+        _update(job, message="กำลังบันทึก")
+        current = storage.list_qa()
+        by_id = {q["id"]: q for q in current}
+        added = updated = 0
+        if mode == "replace":
+            new = []
+            for it in ok:
+                old = by_id.get(it.get("id", ""))
+                if old:
+                    updated += 1
+                    new.append(old | {k: it[k] for k in ("question", "answer", "evidence")})
+                else:
+                    added += 1
+                    it.pop("id", None)
+                    new.append(it | {"id": storage.new_id("qa"), "created_at": storage.now()})
+            removed = len(current) - updated
+            storage.save_qa(new)
+        else:
+            fresh = []
+            for it in ok:
+                old = by_id.get(it.get("id", ""))
+                if old:
+                    updated += 1
+                    old.update({k: it[k] for k in ("question", "answer", "evidence")})
+                else:
+                    added += 1
+                    it.pop("id", None)
+                    fresh.append(it)
+            storage.save_qa(current)
+            storage.add_qa(fresh)
+            removed = 0
+        parts = [f"เพิ่ม {added}", f"อัปเดต {updated}"] + ([f"ลบ {removed}"] if removed else []) + ([f"ข้อผิดพลาด {len(errors)}"] if errors else [])
+        _update(job, status="done", message=" · ".join(parts),
+                result={"added": added, "updated": updated, "removed": removed, "skipped": len(rows) - len(used), "errors": errors[:50]})
+    except Exception as e:
+        traceback.print_exc()
+        _update(job, status="failed", error=f"อ่านไฟล์ไม่ได้: {e}")
+
+
+# ---------- document upload ----------
+
+def start_doc_upload(files: list[tuple[str, bytes]]) -> dict:
+    job = _job("upload", len(files), f"อัปโหลด {len(files)} เอกสาร")
+    threading.Thread(target=_doc_upload, args=(job, files), daemon=True).start()
+    return job
+
+
+def _doc_upload(job, files):
+    added, errors = [], []
+    for name, raw in files:
+        _update(job, message=f"กำลังอ่าน {name}")
+        try:
+            text = read_document_file(name, raw)
+            if text:
+                added.append(storage.add_document(name, text)["id"])
+            else:
+                errors.append({"file": name, "error": "ไม่มีข้อความ (PDF ที่เป็นภาพสแกนต้อง OCR ก่อน)"})
+        except Exception as e:
+            errors.append({"file": name, "error": str(e)})
+        _update(job, done=job["done"] + 1)
+    msg = f"เพิ่ม {len(added)} เอกสาร" + (f" · ไม่สำเร็จ {len(errors)}: " + ", ".join(f"{x['file']} ({x['error']})" for x in errors[:3]) if errors else "")
+    _update(job, status="done" if added or not errors else "failed", message=msg,
+            error=None if added or not errors else msg, result={"added": added, "errors": errors})

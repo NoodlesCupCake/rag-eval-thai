@@ -7,6 +7,7 @@ numpy>=1.26
 rank-bm25>=0.2.2
 pythainlp>=5.0
 pypdf>=4.0
+openpyxl>=3.1
 sentence-transformers>=3.0
 anthropic>=2.6
 openai>=1.40

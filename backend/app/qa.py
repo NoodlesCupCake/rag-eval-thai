@@ -50,55 +50,130 @@ def locate_evidence(evidence: str, docs: list[dict], hint: int = 0) -> dict | No
     return None
 
 
+_NO = {"no", "n", "false", "0", "ไม่", "ไม่ใช้", "x", "skip"}
+
+
+def _xlsx_rows(raw: bytes) -> list[dict]:
+    from openpyxl import load_workbook
+    ws = load_workbook(io.BytesIO(raw), read_only=True, data_only=True).worksheets[0]
+    it = ws.iter_rows(values_only=True)
+    header = [str(h).strip().lower() if h is not None else "" for h in next(it, [])]
+    rows = []
+    for values in it:
+        if values is None or all(v in (None, "") for v in values):
+            continue
+        rows.append({header[i]: ("" if v is None else str(v)) for i, v in enumerate(values) if i < len(header) and header[i]})
+    return rows
+
+
 def parse_upload(filename: str, raw: bytes) -> list[dict]:
-    """Rows with question, answer, evidence (text) and optional document (name)."""
-    text = raw.decode("utf-8-sig")
-    if filename.lower().endswith(".json") or text.lstrip().startswith(("[", "{")):
-        data = json.loads(text)
-        if isinstance(data, dict):
-            data = data.get("items") or data.get("qa") or []
-        rows = data
+    """Rows from .xlsx, .csv or .json with question, answer, evidence (text), and
+    optional document (file name), id (to update an existing question) and use
+    (no / ไม่ใช้ leaves the row out)."""
+    name = filename.lower()
+    if name.endswith((".xlsx", ".xlsm")):
+        rows = _xlsx_rows(raw)
     else:
-        rows = list(csv.DictReader(io.StringIO(text)))
+        text = raw.decode("utf-8-sig")
+        if name.endswith(".json") or text.lstrip().startswith(("[", "{")):
+            data = json.loads(text)
+            if isinstance(data, dict):
+                data = data.get("items") or data.get("qa") or []
+            rows = data
+        else:
+            rows = list(csv.DictReader(io.StringIO(text)))
     out = []
     for r in rows:
         r = {str(k).strip().lower(): v for k, v in r.items() if k}
+        base = {"id": str(r.get("id") or "").strip() or None,
+                "question": str(r.get("question") or "").strip(), "answer": str(r.get("answer") or "").strip(),
+                "use": str(r.get("use") or "").strip().lower() not in _NO}
         ev = r.get("evidence") or r.get("context") or ""
-        if isinstance(ev, list):  # our own export format
-            out.append({"question": r.get("question", ""), "answer": r.get("answer", ""),
-                        "evidence_spans": ev, "document": None})
-            continue
-        out.append({"question": (r.get("question") or "").strip(), "answer": (r.get("answer") or "").strip(),
-                    "evidence_text": str(ev).strip(), "document": (r.get("document") or r.get("doc") or "").strip() or None})
+        if isinstance(ev, list):  # our own JSON export
+            out.append(base | {"evidence_spans": ev, "document": None})
+        else:
+            out.append(base | {"evidence_text": str(ev).strip(), "document": str(r.get("document") or r.get("doc") or "").strip() or None})
     return out
 
 
+def resolve_row(n: int, r: dict, docs: list[dict]) -> tuple[dict | None, dict | None]:
+    """One parsed row -> (QA item with character-span evidence, None) or (None, error)."""
+    if not r["question"]:
+        return None, {"row": n, "error": "ไม่มีคำถาม"}
+    item = {"question": r["question"], "answer": r["answer"], "source": "import"}
+    if r.get("id"):
+        item["id"] = r["id"]
+    if r.get("evidence_spans"):
+        ids = {d["id"] for d in docs}
+        spans = [s for s in r["evidence_spans"] if s.get("doc_id") in ids]
+        if not spans:
+            return None, {"row": n, "error": "evidence อ้างถึงเอกสารที่ไม่มีในระบบ", "question": r["question"]}
+        return item | {"evidence": spans}, None
+    if not r.get("evidence_text"):
+        return None, {"row": n, "error": "ไม่มี evidence (ข้อความในเอกสารที่ใช้ตอบ)", "question": r["question"]}
+    named = [d for d in docs if d["name"] == r.get("document")]
+    ev = locate_evidence(r["evidence_text"], named or docs)
+    if not ev:
+        return None, {"row": n, "error": "หา evidence ในเอกสารไม่เจอ", "question": r["question"]}
+    return item | {"evidence": [ev]}, None
+
+
 def resolve_rows(rows: list[dict], docs: list[dict]) -> tuple[list[dict], list[dict]]:
-    """Turn parsed rows into QA items with character-span evidence. Returns (ok, errors)."""
-    by_name = {d["name"]: d for d in docs}
-    by_id = {d["id"]: d for d in docs}
+    """Turn parsed rows into QA items. Rows marked use = no are left out. Returns (ok, errors)."""
     ok, errors = [], []
-    for n, r in enumerate(rows, 1):
-        if not r["question"]:
-            errors.append({"row": n, "error": "ไม่มีคำถาม"})
+    for n, r in enumerate(rows, 2):  # row 1 is the header in a spreadsheet
+        if not r.get("use", True):
             continue
-        if r.get("evidence_spans"):
-            spans = [s for s in r["evidence_spans"] if s.get("doc_id") in by_id]
-            if spans:
-                ok.append({"question": r["question"], "answer": r["answer"], "evidence": spans, "source": "import"})
-            else:
-                errors.append({"row": n, "error": "evidence อ้างถึงเอกสารที่ไม่มีในระบบ", "question": r["question"]})
-            continue
-        if not r.get("evidence_text"):
-            errors.append({"row": n, "error": "ไม่มี evidence (ข้อความในเอกสารที่ใช้ตอบ)", "question": r["question"]})
-            continue
-        pool = [by_name[r["document"]]] if r.get("document") in by_name else docs
-        ev = locate_evidence(r["evidence_text"], pool)
-        if not ev:
-            errors.append({"row": n, "error": "หา evidence ในเอกสารไม่เจอ", "question": r["question"]})
-            continue
-        ok.append({"question": r["question"], "answer": r["answer"], "evidence": [ev], "source": "import"})
+        item, err = resolve_row(n, r, docs)
+        (ok.append(item) if item else errors.append(err))
     return ok, errors
+
+
+def export_xlsx(items: list[dict], docs: dict[str, dict]) -> bytes:
+    """A spreadsheet people can filter and edit, then import back (matched by id)."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.worksheet.datavalidation import DataValidation
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "qa"
+    cols = [("id", 16), ("use", 8), ("question", 48), ("answer", 40), ("evidence", 64), ("document", 32), ("source", 12)]
+    ws.append([c for c, _ in cols])
+    for q in items:
+        ev = q["evidence"][0]
+        d = docs.get(ev["doc_id"])
+        ws.append([q["id"], "yes", q["question"], q["answer"], d["text"][ev["start"]:ev["end"]] if d else "",
+                   d["name"] if d else "", q.get("source", "")])
+    head = PatternFill("solid", fgColor="F4F4F5")
+    for i, (_, w) in enumerate(cols, 1):
+        letter = ws.cell(row=1, column=i).column_letter
+        ws.column_dimensions[letter].width = w
+        c = ws.cell(row=1, column=i)
+        c.font, c.fill = Font(bold=True), head
+    wrap = Alignment(wrap_text=True, vertical="top")
+    for row in ws.iter_rows(min_row=2):
+        for c in row:
+            c.alignment = wrap
+    ws.freeze_panes = "C2"
+    ws.auto_filter.ref = ws.dimensions
+    dv = DataValidation(type="list", formula1='"yes,no"', allow_blank=True)
+    dv.add(f"B2:B{max(2, len(items) + 1)}")
+    ws.add_data_validation(dv)
+
+    notes = wb.create_sheet("วิธีใช้")
+    for line in [
+        "แก้ไขแล้วนำเข้ากลับได้ที่หน้าชุดคำถาม > นำเข้า",
+        "id: ใช้จับคู่กับคำถามเดิม ถ้าลบ id ออกหรือเพิ่มแถวใหม่ จะถือเป็นคำถามใหม่",
+        "use: ใส่ no เพื่อคัดคำถามออก (หรือกรองแล้วลบแถวทิ้ง แล้วนำเข้าแบบแทนที่ทั้งชุด)",
+        "evidence: ข้อความจากเอกสารที่ใช้ตอบ ต้องคัดลอกมาตรงตัว (ช่องว่างต่างได้)",
+        "document: ชื่อไฟล์เอกสาร ช่วยให้หา evidence ได้เร็วและไม่สับสน",
+    ]:
+        notes.append([line])
+    notes.column_dimensions["A"].width = 100
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
 
 
 def read_document_file(filename: str, raw: bytes) -> str:

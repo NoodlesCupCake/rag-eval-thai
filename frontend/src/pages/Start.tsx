@@ -5,6 +5,7 @@ import { api, errorText, pollJob } from "../api";
 import { useStatus } from "../status";
 import type { Job, Status } from "../types";
 import { ErrorNote, JobProgress } from "../components/ui";
+import { Busy, useFeedback } from "../feedback";
 import { Term } from "../components/Term";
 
 /* First-run setup: four steps from an empty app to a first benchmark result. Each step
@@ -52,17 +53,26 @@ export function StartPage() {
   const [error, setError] = useState<string | null>(null);
   const [job, setJob] = useState<Job | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const { toast, track } = useFeedback();
+  const [what, setWhat] = useState<string | null>(null);
 
   const steps = setupSteps(status, llmSkipped);
   const current = steps.findIndex((s) => !s.done);
   const doneCount = steps.filter((s) => s.done).length;
   const c = status?.counts;
 
-  async function act(fn: () => Promise<unknown>) {
+  async function act(key: string, fn: () => Promise<unknown>, ok?: string) {
     setBusy(true);
+    setWhat(key);
     setError(null);
-    try { await fn(); refresh(); } catch (e) { setError(errorText(e)); }
+    try {
+      const r = await fn();
+      if (r && typeof r === "object" && "kind" in r) track(r as Job, () => refresh()); // background job
+      else if (ok) toast(ok);
+      refresh();
+    } catch (e) { setError(errorText(e)); }
     setBusy(false);
+    setWhat(null);
   }
   const skipLlm = (v: boolean) => { write(SKIP_LLM, v); setLlmSkipped(v); };
   const dismiss = () => { write(DISMISSED, true); navigate("/documents"); };
@@ -99,13 +109,17 @@ export function StartPage() {
               summary={c?.documents ? `${c.documents} เอกสาร` : undefined}>
           <p>เอกสารที่ RAG จะค้นหาคำตอบ เช่น ระเบียบบริษัท คู่มือ หรือ FAQ รองรับ .txt .md และ .pdf ถ้ายังไม่มี เริ่มจากชุดตัวอย่างได้ เป็นเอกสารภาษาไทยสมมติ 3 ฉบับพร้อมคำถาม 29 ข้อ ทำให้ขั้นที่ 2 เสร็จไปด้วย</p>
           <div className="actions">
-            <button className="btn accent" disabled={busy} onClick={() => act(() => api.post("/samples"))}>โหลดชุดตัวอย่าง</button>
-            <button className="btn" disabled={busy} onClick={() => fileRef.current?.click()}><Upload className="icon" />อัปโหลดเอกสารของฉัน</button>
+            <button className="btn accent" disabled={busy} onClick={() => act("samples", () => api.post("/samples"), "โหลดชุดตัวอย่างแล้ว")}>
+              <Busy busy={what === "samples"} label="กำลังโหลด">โหลดชุดตัวอย่าง</Busy>
+            </button>
+            <button className="btn" disabled={busy} onClick={() => fileRef.current?.click()}>
+              <Busy busy={what === "upload"} label="กำลังอัปโหลด"><Upload className="icon" />อัปโหลดเอกสารของฉัน</Busy>
+            </button>
             <input ref={fileRef} type="file" multiple accept=".txt,.md,.pdf" hidden
                    onChange={(e) => {
                      const files = [...(e.target.files ?? [])];
                      e.target.value = "";
-                     if (files.length) act(() => api.upload("/documents", files));
+                     if (files.length) act("upload", () => api.upload("/documents", files));
                    }} />
           </div>
         </Step>
@@ -140,7 +154,7 @@ export function StartPage() {
           <JobProgress job={job} />
           <div className="actions">
             <button className="btn accent" onClick={quickRun} disabled={job?.status === "running" || !c?.qa}>
-              {job?.status === "running" ? "กำลังรัน" : "รันแบบเร็ว"}
+              <Busy busy={job?.status === "running"} label="กำลังรัน">รันแบบเร็ว</Busy>
             </button>
             <Link className="btn" to="/bench">ตั้งค่าเอง</Link>
             {!c?.qa && <span className="small muted">ต้องมีคำถามก่อน</span>}

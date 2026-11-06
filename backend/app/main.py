@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import time
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -15,15 +16,38 @@ from fastapi.staticfiles import StaticFiles  # noqa: E402
 from pydantic import BaseModel, Field  # noqa: E402
 
 from . import llm, runner, storage  # noqa: E402
-from .chunking import STRATEGIES, chunk_text, word_spans  # noqa: E402
+from .chunking import STRATEGIES, chunk_documents, chunk_text, word_spans  # noqa: E402
 from .metrics import is_hit  # noqa: E402
-from .qa import locate_evidence, parse_upload, read_document_file, resolve_rows  # noqa: E402
-from .retrieval import RETRIEVER_TYPES, SUGGESTED_MODELS, device_name  # noqa: E402
+from .qa import export_xlsx, locate_evidence, parse_upload, read_document_file, resolve_rows  # noqa: E402
+from .retrieval import RETRIEVER_TYPES, SUGGESTED_MODELS, build_retriever, device_name, timed_search  # noqa: E402
 
-app = FastAPI(title="RAG Eval TH")
+TAGS = [
+    {"name": "documents", "description": "เอกสารที่ RAG จะค้น และตัวอย่างการตัด chunk"},
+    {"name": "qa", "description": "ชุดคำถาม: คำถาม คำตอบอ้างอิง และ evidence เป็นตำแหน่งตัวอักษรในเอกสาร"},
+    {"name": "runs", "description": "รัน benchmark และอ่านผล Hit@k, MRR, nDCG@10, latency"},
+    {"name": "playground", "description": "ถามคำถามเดียวแล้วดู chunk ที่ค้นได้และคำตอบของ LLM"},
+    {"name": "jobs", "description": "งานเบื้องหลัง (นำเข้า อัปโหลด สร้างคำถาม benchmark) และความคืบหน้า"},
+    {"name": "settings", "description": "ตั้งค่า LLM: Claude หรือ server ที่รองรับ OpenAI API เช่น Ollama"},
+    {"name": "status", "description": "สถานะของระบบ"},
+]
+
+app = FastAPI(
+    title="RAG Eval API",
+    version="0.1.0",
+    description=(
+        "วัดผล RAG สำหรับเอกสารภาษาไทย: ตัด chunk, ค้นด้วย BM25 / dense / hybrid, "
+        "วัด Hit@k, MRR, nDCG@10 และ latency p50/p95 ต่อคำถาม\n\n"
+        "งานที่ใช้เวลานาน (นำเข้า อัปโหลด สร้างคำถาม benchmark) คืน job ทันที "
+        "แล้วดูความคืบหน้าได้ที่ `GET /api/jobs/{job_id}`"
+    ),
+    openapi_tags=TAGS,
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+    openapi_url="/api/openapi.json",
+)
 
 
-@app.get("/api/status")
+@app.get("/api/status", tags=["status"])
 def status():
     return {"llm_available": llm.available(), "default_model": llm.default_model(), "llm": llm.public_settings(),
             "device": device_name(),
@@ -34,12 +58,12 @@ def status():
 
 # ---------- documents ----------
 
-@app.get("/api/documents")
+@app.get("/api/documents", tags=["documents"])
 def documents():
     return storage.list_documents()
 
 
-@app.get("/api/documents/{doc_id}")
+@app.get("/api/documents/{doc_id}", tags=["documents"])
 def document(doc_id: str):
     d = storage.get_document(doc_id)
     if not d:
@@ -47,20 +71,18 @@ def document(doc_id: str):
     return d
 
 
-@app.post("/api/documents")
+@app.post("/api/documents", tags=["documents"])
 async def upload_documents(files: list[UploadFile] = File(...)):
-    out = []
+    """Read the uploads, then extract text in a background job (PDFs can be slow)."""
+    payload = []
     for f in files:
         if not f.filename.lower().endswith((".txt", ".md", ".pdf")):
             raise HTTPException(400, f"{f.filename}: รองรับเฉพาะ .txt .md .pdf")
-        text = read_document_file(f.filename, await f.read())
-        if not text:
-            raise HTTPException(400, f"{f.filename}: ไม่มีข้อความ (PDF ที่เป็นภาพสแกนต้อง OCR ก่อน)")
-        out.append({k: v for k, v in storage.add_document(f.filename, text).items() if k != "text"})
-    return out
+        payload.append((f.filename, await f.read()))
+    return runner.start_doc_upload(payload)
 
 
-@app.delete("/api/documents/{doc_id}")
+@app.delete("/api/documents/{doc_id}", tags=["documents"])
 def remove_document(doc_id: str):
     if not storage.delete_document(doc_id):
         raise HTTPException(404, "ไม่พบเอกสาร")
@@ -73,7 +95,7 @@ class PreviewReq(BaseModel):
     overlap: int = 0
 
 
-@app.post("/api/documents/{doc_id}/chunks")
+@app.post("/api/documents/{doc_id}/chunks", tags=["documents"])
 def preview_chunks(doc_id: str, req: PreviewReq):
     d = storage.get_document(doc_id)
     if not d:
@@ -91,7 +113,7 @@ def preview_chunks(doc_id: str, req: PreviewReq):
             "stats": {"n": len(chunks), "avg": sum(sizes) / len(sizes), "min": min(sizes), "max": max(sizes)}}
 
 
-@app.post("/api/samples")
+@app.post("/api/samples", tags=["documents"])
 def load_samples():
     """Load the bundled Thai sample documents and their QA set."""
     existing = {d["name"] for d in storage.list_documents()}
@@ -112,7 +134,7 @@ def load_samples():
 
 # ---------- QA ----------
 
-@app.get("/api/qa")
+@app.get("/api/qa", tags=["qa"])
 def qa_list(strategy: str | None = None, size: int = 400, overlap: int = 0):
     """The QA set. With a chunking config, each item also lists the chunks its evidence
     falls in under that config (numbers match the document page's chunk preview)."""
@@ -140,7 +162,7 @@ class QAIn(BaseModel):
     document_id: str | None = None
 
 
-@app.post("/api/qa")
+@app.post("/api/qa", tags=["qa"])
 def qa_add(item: QAIn):
     docs = storage.list_documents(include_text=True)
     pool = [d for d in docs if d["id"] == item.document_id] or docs
@@ -156,7 +178,7 @@ class QAPatch(BaseModel):
     answer: str | None = None
 
 
-@app.patch("/api/qa/{qa_id}")
+@app.patch("/api/qa/{qa_id}", tags=["qa"])
 def qa_update(qa_id: str, patch: QAPatch):
     items = storage.list_qa()
     for it in items:
@@ -167,33 +189,37 @@ def qa_update(qa_id: str, patch: QAPatch):
     raise HTTPException(404, "ไม่พบคำถาม")
 
 
-@app.delete("/api/qa/{qa_id}")
+@app.delete("/api/qa/{qa_id}", tags=["qa"])
 def qa_delete(qa_id: str):
     items = storage.list_qa()
     storage.save_qa([q for q in items if q["id"] != qa_id])
     return {"ok": True}
 
 
-@app.delete("/api/qa")
+@app.delete("/api/qa", tags=["qa"])
 def qa_clear():
     storage.save_qa([])
     return {"ok": True}
 
 
-@app.post("/api/qa/import")
-async def qa_import(file: UploadFile = File(...)):
-    try:
-        rows = parse_upload(file.filename, await file.read())
-    except (ValueError, json.JSONDecodeError, csv.Error) as e:
-        raise HTTPException(400, f"อ่านไฟล์ไม่ได้: {e}")
-    ok, errors = resolve_rows(rows, storage.list_documents(include_text=True))
-    storage.add_qa(ok)
-    return {"added": len(ok), "errors": errors}
+@app.post("/api/qa/import", tags=["qa"])
+async def qa_import(file: UploadFile = File(...), mode: str = "merge"):
+    """Starts a background import job; poll /api/jobs/{id} for progress."""
+    if not file.filename.lower().endswith((".xlsx", ".xlsm", ".csv", ".json")):
+        raise HTTPException(400, "รองรับ .xlsx .csv และ .json")
+    if mode not in ("merge", "replace"):
+        raise HTTPException(400, "mode ต้องเป็น merge หรือ replace")
+    return runner.start_import(file.filename, await file.read(), mode)
 
 
-@app.get("/api/qa/export")
+@app.get("/api/qa/export", tags=["qa"])
 def qa_export(format: str = "json"):
     items = storage.list_qa()
+    if format == "xlsx":
+        docs = {d["id"]: d for d in storage.list_documents(include_text=True)}
+        return Response(export_xlsx(items, docs),
+                        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        headers={"Content-Disposition": "attachment; filename=qa.xlsx"})
     if format == "csv":
         docs = {d["id"]: d for d in storage.list_documents(include_text=True)}
         buf = io.StringIO()
@@ -217,7 +243,7 @@ class GenerateReq(BaseModel):
     model: str | None = None
 
 
-@app.post("/api/qa/generate")
+@app.post("/api/qa/generate", tags=["qa"])
 def qa_generate(req: GenerateReq):
     try:
         return runner.start_generate(req.document_ids, req.per_passage, req.passage_chars,
@@ -228,7 +254,7 @@ def qa_generate(req: GenerateReq):
 
 # ---------- LLM settings ----------
 
-@app.get("/api/settings")
+@app.get("/api/settings", tags=["settings"])
 def settings_get():
     return {"settings": llm.public_settings(), "presets": llm.PRESETS, "in_docker": llm.IN_DOCKER}
 
@@ -260,13 +286,13 @@ def _resolve_settings(s: SettingsIn) -> dict:
     return new
 
 
-@app.put("/api/settings")
+@app.put("/api/settings", tags=["settings"])
 def settings_put(s: SettingsIn):
     storage.save_settings(_resolve_settings(s))
     return llm.public_settings()
 
 
-@app.post("/api/settings/test")
+@app.post("/api/settings/test", tags=["settings"])
 def settings_test(s: SettingsIn):
     """Test the values in the form without saving them."""
     try:
@@ -303,7 +329,63 @@ class RunReq(BaseModel):
     generation: GenCfg = GenCfg()
 
 
-@app.post("/api/runs")
+# ---------- playground ----------
+
+class ChatReq(BaseModel):
+    question: str = Field(min_length=1)
+    chunking: ChunkCfg
+    retriever: RetrieverCfg
+    top_k: int = Field(5, ge=1, le=20)
+    answer: bool = True  # also ask the LLM, when one is configured
+
+
+_chat_index: dict[tuple, tuple] = {}
+
+
+@app.post("/api/chat", tags=["playground"])
+def chat(req: ChatReq):
+    """Ask one question against the documents with one config: the ranked chunks, their
+    scores, the retrieval time, and the LLM's answer from the top chunks when configured.
+    The index is built once per config and reused."""
+    if req.chunking.strategy not in STRATEGIES:
+        raise HTTPException(400, f"unknown strategy {req.chunking.strategy}")
+    if req.retriever.type not in RETRIEVER_TYPES or (req.retriever.type != "bm25" and not req.retriever.model):
+        raise HTTPException(400, "retriever ไม่ถูกต้อง")
+    docs = storage.list_documents(include_text=True)
+    if not docs:
+        raise HTTPException(400, "ยังไม่มีเอกสาร")
+    key = (req.chunking.strategy, req.chunking.size, req.chunking.overlap, req.retriever.type, req.retriever.model,
+           tuple(sorted((d["id"], len(d["text"])) for d in docs)))
+    index_ms = 0.0
+    if key not in _chat_index:
+        t0 = time.perf_counter()
+        chunks = chunk_documents(docs, req.chunking.strategy, req.chunking.size, req.chunking.overlap)
+        r = build_retriever(req.retriever.model_dump())
+        r.index(chunks)
+        index_ms = (time.perf_counter() - t0) * 1000
+        if len(_chat_index) > 8:
+            _chat_index.pop(next(iter(_chat_index)))
+        _chat_index[key] = (r, chunks)
+    retriever, chunks = _chat_index[key]
+    hits, ms = timed_search(retriever, req.question, req.top_k)
+    names = {d["id"]: d["name"] for d in docs}
+    out = {
+        "retrieval_ms": ms, "index_ms": index_ms, "n_chunks": len(chunks),
+        "chunks": [{"id": chunks[i].id, "doc_id": chunks[i].doc_id, "doc_name": names.get(chunks[i].doc_id),
+                    "number": int(chunks[i].id.rsplit(":", 1)[1]) + 1, "score": round(sc, 4), "text": chunks[i].text}
+                   for i, sc in hits],
+        "answer": None, "answer_ms": None, "answer_error": None, "model": None,
+    }
+    if req.answer and llm.available():
+        try:
+            out["answer"], out["answer_ms"] = llm.answer(req.question, [c["text"] for c in out["chunks"][:3]])
+            out["model"] = llm.default_model()
+        except llm.LLMError as e:
+            out["answer_error"] = str(e)
+    return out
+
+
+@app.post("/api/runs", tags=["runs"])
 def run_create(req: RunReq):
     for c in req.chunkings:
         if c.strategy not in STRATEGIES:
@@ -317,12 +399,12 @@ def run_create(req: RunReq):
         raise HTTPException(400, str(e))
 
 
-@app.get("/api/runs")
+@app.get("/api/runs", tags=["runs"])
 def runs():
     return storage.list_runs()
 
 
-@app.get("/api/runs/{run_id}")
+@app.get("/api/runs/{run_id}", tags=["runs"])
 def run_get(run_id: str):
     r = storage.get_run(run_id)
     if not r:
@@ -330,12 +412,17 @@ def run_get(run_id: str):
     return r
 
 
-@app.delete("/api/runs/{run_id}")
+@app.delete("/api/runs/{run_id}", tags=["runs"])
 def run_delete(run_id: str):
     return {"ok": storage.delete_run(run_id)}
 
 
-@app.get("/api/jobs/{job_id}")
+@app.get("/api/jobs", tags=["jobs"])
+def jobs():
+    return runner.list_jobs()
+
+
+@app.get("/api/jobs/{job_id}", tags=["jobs"])
 def job(job_id: str):
     j = runner.get_job(job_id)
     if not j:

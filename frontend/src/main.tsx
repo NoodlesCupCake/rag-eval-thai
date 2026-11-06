@@ -8,6 +8,7 @@ import "@fontsource/ibm-plex-mono/400.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import "./styles.css";
 import { StatusProvider } from "./status";
+import { FeedbackProvider } from "./feedback";
 import { Layout } from "./components/Layout";
 import { DocumentsPage } from "./pages/Documents";
 import { QAPage } from "./pages/QA";
@@ -16,6 +17,8 @@ import { RunsPage } from "./pages/Runs";
 import { RunDetailPage } from "./pages/RunDetail";
 import { SettingsPage } from "./pages/Settings";
 import { ComparePage } from "./pages/Compare";
+import { ChatPage } from "./pages/Chat";
+import { MethodPage } from "./pages/Method";
 import { StartPage, isDismissed, setupSteps } from "./pages/Start";
 import { useStatus } from "./status";
 
@@ -41,6 +44,8 @@ const router = createBrowserRouter([
       { path: "runs/:id", element: <RunDetailPage /> },
       { path: "settings", element: <SettingsPage /> },
       { path: "compare", element: <ComparePage /> },
+      { path: "chat", element: <ChatPage /> },
+      { path: "method", element: <MethodPage /> },
       { path: "*", element: <Navigate to="/documents" replace /> },
     ],
   },
@@ -49,7 +54,9 @@ const router = createBrowserRouter([
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <StatusProvider>
-      <RouterProvider router={router} />
+      <FeedbackProvider>
+        <RouterProvider router={router} />
+      </FeedbackProvider>
     </StatusProvider>
   </StrictMode>,
 );

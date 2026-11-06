@@ -4,6 +4,7 @@ import { api, errorText } from "../api";
 import { useStatus } from "../status";
 import type { ConnectionTest, LLMSettings, Preset } from "../types";
 import { ErrorNote, PageHead } from "../components/ui";
+import { Busy, useFeedback } from "../feedback";
 
 interface Form {
   preset: string;
@@ -32,6 +33,7 @@ export function SettingsPage() {
   const [result, setResult] = useState<ConnectionTest | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { toast } = useFeedback();
 
   useEffect(() => {
     api.get<{ settings: LLMSettings; presets: Preset[]; in_docker: boolean }>("/settings").then((r) => {
@@ -59,6 +61,7 @@ export function SettingsPage() {
       setResult(r);
       if (r.ok) {
         setSaved(await api.put<LLMSettings>("/settings", body()));
+        toast(`เชื่อมต่อ ${r.model} ได้ บันทึกแล้ว`);
         setF((cur) => (cur ? { ...cur, api_key: "" } : cur));
         refresh();
       }
@@ -123,7 +126,7 @@ export function SettingsPage() {
         {result && !result.ok && <div className="notice">{result.note}</div>}
         <div className="actions">
           <button className="btn primary" onClick={testAndSave} disabled={busy || (!isClaude && !f.base_url)}>
-            {busy ? "กำลังทดสอบ" : "ทดสอบการเชื่อมต่อ"}
+            <Busy busy={busy} label="กำลังทดสอบ">ทดสอบการเชื่อมต่อ</Busy>
           </button>
           <span className="small muted">ผ่านแล้วจะบันทึกให้อัตโนมัติ</span>
         </div>

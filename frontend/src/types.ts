@@ -85,7 +85,9 @@ export interface Status {
 
 export interface Job {
   id: string;
-  kind: "run" | "generate";
+  kind: "run" | "generate" | "import" | "upload";
+  title?: string;
+  result?: unknown;
   status: "running" | "done" | "failed";
   done: number;
   total: number;

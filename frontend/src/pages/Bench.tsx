@@ -1,7 +1,8 @@
 import { useState, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Play, Plus, X } from "lucide-react";
-import { api, errorText, pollJob } from "../api";
+import { api } from "../api";
+import { Busy, useAction, useFeedback } from "../feedback";
 import { useStatus } from "../status";
 import type { ChunkCfg, Job } from "../types";
 import { num } from "../format";
@@ -30,35 +31,34 @@ export function BenchPage() {
   const [kMax, setKMax] = useState(10);
   const [sample, setSample] = useState("");
   const [gen, setGen] = useState({ enabled: false, top_k: 3 });
-  const [job, setJob] = useState<Job | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [error] = useState<string | null>(null);
+  const { track, jobs } = useFeedback();
+  const { run: act, busy } = useAction();
+  const job: Job | null = jobs.find((j) => j.id === jobId) ?? null;
 
   const nq = status?.counts.qa ?? 0;
   const nUsed = sample ? Math.min(Number(sample), nq) : nq;
   const nConfigs = chunks.length * rets.length;
-  const running = job?.status === "running";
+  const running = busy("run") || job?.status === "running";
 
   const editChunk = (i: number, patch: Partial<ChunkCfg>) => setChunks(chunks.map((c, j) => (j === i ? { ...c, ...patch } : c)));
   const editRet = (i: number, patch: Partial<RetRow>) => setRets(rets.map((r, j) => (j === i ? { ...r, ...patch } : r)));
 
   async function run() {
-    setError(null);
-    try {
-      const j = await api.post<Job>("/runs", {
+    const j = await act("run", () => api.post<Job>("/runs", {
         name: name || null,
         chunkings: chunks,
         retrievers: rets.map((r) => ({ type: r.type, model: r.type === "bm25" ? null : r.model })),
         k_max: kMax,
         sample: sample ? Number(sample) : null,
         generation: gen,
-      });
-      refresh();
-      const done = await pollJob(j.id, setJob);
-      if (done.status === "failed") setError(done.error);
-      navigate("/runs/" + j.run_id);
-    } catch (e) {
-      setError(errorText(e));
-    }
+      }));
+    if (!j) return;
+    refresh();
+    setJobId(j.id);
+    // runs in the background; open the result when it finishes (if still on this page it navigates)
+    track(j, () => navigate("/runs/" + j.run_id));
   }
 
   return (
@@ -137,7 +137,7 @@ export function BenchPage() {
           <JobProgress job={job} />
           <ErrorNote error={error} />
           <button className="btn accent big" onClick={run} disabled={running || !nq}>
-            <Play className="icon" />{running ? "กำลังรัน" : "เริ่ม benchmark"}
+            <Busy busy={running} label="กำลังรัน · เปลี่ยนหน้าได้"><Play className="icon" />เริ่ม benchmark</Busy>
           </button>
           {!nq && <div className="small muted">ต้องมีคำถามในชุดคำถามก่อน</div>}
         </div>
