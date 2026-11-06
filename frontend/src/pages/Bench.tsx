@@ -27,6 +27,26 @@ export function BenchPage() {
   const navigate = useNavigate();
   const [chunks, setChunks] = useState(DEFAULT_CHUNKS);
   const [rets, setRets] = useState(DEFAULT_RETRIEVERS);
+  // "embedding": hold chunking fixed and compare models, so the model is the only variable
+  const [mode, setMode] = useState<"chunking" | "embedding">("chunking");
+  const [models, setModels] = useState<string[]>(["intfloat/multilingual-e5-small", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"]);
+  const [baseline, setBaseline] = useState(true);
+  const [custom, setCustom] = useState("");
+  const applyModels = (ms: string[], withBm25 = baseline) => {
+    setModels(ms);
+    setRets([...(withBm25 ? [{ type: "bm25", model: "" }] : []), ...ms.map((m) => ({ type: "dense", model: m }))]);
+  };
+  function switchMode(m: "chunking" | "embedding") {
+    setMode(m);
+    if (m === "embedding") {
+      setChunks([{ strategy: "recursive", size: 400, overlap: 50 }]);
+      applyModels(models);
+      if (!name) setName("เทียบ embedding");
+    } else {
+      setChunks(DEFAULT_CHUNKS);
+      setRets(DEFAULT_RETRIEVERS);
+    }
+  }
   const [name, setName] = useState("");
   const [kMax, setKMax] = useState(10);
   const [sample, setSample] = useState("");
@@ -70,6 +90,47 @@ export function BenchPage() {
       <PageHead title="Benchmark" sub="รันทุกคู่ระหว่างวิธีตัด chunk กับ retriever แล้ววัด Hit@k, MRR, coverage และ latency ต่อคำถาม" />
       <div className="split">
         <div className="stack">
+          <div className="card card-pad stack-16">
+            <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
+              <h2 className="method-title" style={{ fontSize: 15 }}>อยากรู้อะไร</h2>
+              <div className="seg">
+                <button className={mode === "chunking" ? "on" : ""} onClick={() => switchMode("chunking")}>เทียบวิธีตัด chunk</button>
+                <button className={mode === "embedding" ? "on" : ""} onClick={() => switchMode("embedding")}>เทียบ embedding model</button>
+              </div>
+            </div>
+            {mode === "embedding" && (
+              <>
+                <p className="small sec" style={{ margin: 0 }}>
+                  ตัด chunk แบบเดียว แล้วค้นด้วยแต่ละโมเดล ดูว่า chunk ที่ตอบคำถามได้จริงอยู่อันดับเท่าไร
+                  ยิ่งอยู่ต้น ๆ ยิ่งแปลว่า embedding ดี ผลจะมีตาราง “เทียบ embedding model” ให้ดูอันดับ p50 / p95 คู่กับความเร็ว
+                </p>
+                <div className="stack-8">
+                  {(status?.suggested_models ?? []).map((m) => (
+                    <label key={m.id} className="check small">
+                      <input type="checkbox" checked={models.includes(m.id)}
+                             onChange={(e) => applyModels(e.target.checked ? [...models, m.id] : models.filter((x) => x !== m.id))} />
+                      <span className="mono">{m.id}</span><span className="muted">{m.note}</span>
+                    </label>
+                  ))}
+                  {models.filter((m) => !status?.suggested_models.some((x) => x.id === m)).map((m) => (
+                    <label key={m} className="check small">
+                      <input type="checkbox" checked onChange={() => applyModels(models.filter((x) => x !== m))} />
+                      <span className="mono">{m}</span><span className="muted">เพิ่มเอง</span>
+                    </label>
+                  ))}
+                  <form className="row" onSubmit={(e) => { e.preventDefault(); const m = custom.trim(); if (m && !models.includes(m)) applyModels([...models, m]); setCustom(""); }}>
+                    <input className="input mono" style={{ height: 32 }} placeholder="Hugging Face model id อื่น เช่น BAAI/bge-small-en-v1.5" value={custom} onChange={(e) => setCustom(e.target.value)} />
+                    <button className="btn sm" type="submit" disabled={!custom.trim()}><Plus className="icon" />เพิ่ม</button>
+                  </form>
+                  <label className="check small">
+                    <input type="checkbox" checked={baseline} onChange={(e) => { setBaseline(e.target.checked); applyModels(models, e.target.checked); }} />
+                    รวม BM25 เป็นเส้นฐาน (ไม่ใช้ embedding) เพื่อดูว่าโมเดลช่วยได้แค่ไหน
+                  </label>
+                </div>
+                {models.length < 2 && <div className="small muted">เลือกอย่างน้อย 2 โมเดลเพื่อให้มีตารางเทียบ</div>}
+              </>
+            )}
+          </div>
           <div className="card">
             <div className="card-head"><h2>วิธีตัด chunk</h2><span className="hint">ขนาดวัดเป็นตัวอักษรทุกวิธี เทียบกันได้ตรง ๆ</span></div>
             <div className="card-pad stack-16">

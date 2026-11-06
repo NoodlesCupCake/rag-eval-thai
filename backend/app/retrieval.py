@@ -12,11 +12,14 @@ from .chunking import Chunk, _tokenizer
 
 RETRIEVER_TYPES = ("dense", "bm25", "hybrid")
 
+# Multilingual models that handle Thai and run with plain sentence-transformers (no remote code).
 SUGGESTED_MODELS = [
-    {"id": "intfloat/multilingual-e5-small", "note": "118M · fast, a good first baseline"},
-    {"id": "intfloat/multilingual-e5-base", "note": "278M"},
-    {"id": "BAAI/bge-m3", "note": "568M · strong on Thai, slower"},
-    {"id": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2", "note": "118M · older baseline"},
+    {"id": "intfloat/multilingual-e5-small", "note": "118M · ≈470 MB · เร็ว เหมาะเป็นจุดเริ่ม", "params_m": 118, "download_mb": 470},
+    {"id": "intfloat/multilingual-e5-base", "note": "278M · ≈1.1 GB", "params_m": 278, "download_mb": 1100},
+    {"id": "intfloat/multilingual-e5-large", "note": "560M · ≈2.2 GB · แม่นขึ้น ช้าลง", "params_m": 560, "download_mb": 2200},
+    {"id": "BAAI/bge-m3", "note": "568M · ≈2.3 GB · ภาษาไทยดี รองรับข้อความยาว", "params_m": 568, "download_mb": 2300},
+    {"id": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2", "note": "118M · ≈470 MB · รุ่นเก่า ใช้เทียบ", "params_m": 118, "download_mb": 470},
+    {"id": "sentence-transformers/paraphrase-multilingual-mpnet-base-v2", "note": "278M · ≈1.1 GB · รุ่นเก่า", "params_m": 278, "download_mb": 1100},
 ]
 
 
@@ -105,11 +108,22 @@ class DenseRetriever(Retriever):
 
     def index(self, chunks):
         key = (self.embedder.name, tuple((c.doc_id, c.start, c.end) for c in chunks))
-        if key not in _emb_cache:
+        self.cached = key in _emb_cache
+        self.encode_seconds = 0.0
+        if not self.cached:
             if len(_emb_cache) > 16:
                 _emb_cache.pop(next(iter(_emb_cache)))
+            t0 = time.perf_counter()
             _emb_cache[key] = self.embedder.passages([c.text for c in chunks])
+            self.encode_seconds = time.perf_counter() - t0
         self.matrix = _emb_cache[key]
+
+    def stats(self, n_chunks: int) -> dict:
+        """Embedding-model facts for the results page. Encoding speed is only known when
+        this run actually encoded the chunks (not served from the cache)."""
+        return {"model": self.embedder.name, "dim": int(self.matrix.shape[1]), "device": device_name(),
+                "cached": self.cached, "encode_seconds": self.encode_seconds,
+                "chunks_per_sec": n_chunks / self.encode_seconds if self.encode_seconds else None}
 
     def search(self, query, k):
         q = self.embedder.query(query)
@@ -138,6 +152,9 @@ class HybridRetriever(Retriever):
     def index(self, chunks):
         self.dense.index(chunks)
         self.sparse.index(chunks)
+
+    def stats(self, n_chunks: int) -> dict:
+        return self.dense.stats(n_chunks)
 
     def search(self, query, k):
         fused: dict[int, float] = {}

@@ -11,7 +11,7 @@ from . import llm, storage
 from .chunking import chunk_documents, chunk_text, label as chunk_label
 from .metrics import aggregate, gold_chunks, ndcg, score_question
 from .qa import locate_evidence, parse_upload, read_document_file, resolve_row
-from .retrieval import build_retriever, retriever_label, timed_search
+from .retrieval import _emb_cache, build_retriever, retriever_label, timed_search
 
 _jobs: dict[str, dict] = {}
 _jobs_lock = threading.Lock()
@@ -80,6 +80,8 @@ def start_run(spec: dict) -> dict:
 def _run_benchmark(job, run, configs, docs, qa):
     k_max = int(run["spec"].get("k_max", 10))
     gen = run["spec"].get("generation") or {}
+    encoded: dict[str, dict] = {}  # first encoding per model, so speed is measured once per run
+    _emb_cache.clear()             # measure encoding speed fresh in every run
     try:
         for ccfg, rcfg in configs:
             lbl = f"{chunk_label(ccfg)} · {retriever_label(rcfg)}"
@@ -116,6 +118,7 @@ def _run_benchmark(job, run, configs, docs, qa):
                 "label": lbl, "chunking": ccfg, "retriever": rcfg,
                 "n_chunks": len(chunks), "avg_chunk_chars": sum(sizes) / max(len(sizes), 1),
                 "index_seconds": index_s, "metrics": aggregate(per_q, k_max),
+                "embedding": _embedding_stats(retriever, len(chunks), encoded, ccfg),
                 "latencies": [round(p["latency_ms"], 3) for p in per_q], "per_question": per_q,
             })
             storage.save_run(run)
@@ -128,6 +131,18 @@ def _run_benchmark(job, run, configs, docs, qa):
     finally:
         run["finished_at"] = storage.now()
         storage.save_run(run)
+
+
+def _embedding_stats(retriever, n_chunks: int, encoded: dict, ccfg: dict) -> dict | None:
+    if not hasattr(retriever, "stats"):
+        return None
+    st = retriever.stats(n_chunks)
+    key = f"{st['model']}|{ccfg['strategy']}|{ccfg['size']}|{ccfg.get('overlap', 0)}"
+    if not st["cached"]:
+        encoded[key] = st
+    elif key in encoded:  # e.g. hybrid reusing the vectors dense just made
+        st = encoded[key] | {"cached": True}
+    return st
 
 
 def _generate(per_q, qa, gen):

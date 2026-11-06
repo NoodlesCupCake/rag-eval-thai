@@ -6,6 +6,7 @@ import { HitCurve } from "./HitCurve";
 import { LatencyChart, percentile } from "./LatencyChart";
 import { RankDistribution } from "./Ruler";
 import { Term } from "./Term";
+import { EmbeddingTable } from "./EmbeddingTable";
 
 /* Stats, charts and the comparison table for a set of results: one run, or several runs
    on the compare page (then each row also carries its run name). */
@@ -32,6 +33,7 @@ export function kNeeded(r: Result, target: number): number | undefined {
 export function metric(r: Result, key: string): number | undefined {
   if (key === "latency_p90_ms" && r.metrics[key] == null) return percentile(r.latencies, 90);
   if (key === "k@95") return kNeeded(r, 0.95);
+  if (key === "rank@50") return kNeeded(r, 0.5);
   if (key === "ctx@95") { const k = kNeeded(r, 0.95); return k == null ? undefined : k * r.avg_chunk_chars; }
   return r.metrics[key];
 }
@@ -59,8 +61,9 @@ export function ResultsView({ results, kMax, focus, setFocus, baseline, setBasel
     ...[1, 3, 5].filter((k) => k <= kMax).map((k): Col => ({ key: `hit@${k}`, label: `Hit@${k}`, fmt: p, delta: "pt" })),
     { key: "mrr", label: "MRR", fmt: f3, delta: "ratio" } as Col,
     ...(hasNdcg ? [{ key: "ndcg@10", label: "nDCG@10", fmt: f3, delta: "ratio" } as Col] : []),
-    { key: "k@95", label: "k@95%", fmt: (v) => (v == null ? `> ${kMax}` : String(v)), lowerIsBetter: true, delta: "count" } as Col,
-    { key: "ctx@95", label: "ตัวอักษร@95%", fmt: (v) => (v == null ? "–" : Math.round(v).toLocaleString("th-TH")), lowerIsBetter: true, delta: "count" } as Col,
+    { key: "rank@50", label: "อันดับ p50", fmt: (v) => (v == null ? `> ${kMax}` : String(v)), lowerIsBetter: true, delta: "count" } as Col,
+    { key: "k@95", label: "อันดับ p95", fmt: (v) => (v == null ? `> ${kMax}` : String(v)), lowerIsBetter: true, delta: "count" } as Col,
+    { key: "ctx@95", label: "context p95", extra: true, fmt: (v) => (v == null ? "–" : Math.round(v).toLocaleString("th-TH")), lowerIsBetter: true, delta: "count" } as Col,
     { key: "coverage@3", label: "Coverage@3", fmt: p, extra: true, delta: "pt" } as Col,
     { key: "latency_p50_ms", label: "p50", fmt: ms, lowerIsBetter: true, delta: "ms" } as Col,
     { key: "latency_p90_ms", label: "p90", fmt: ms, lowerIsBetter: true, extra: true, delta: "ms" } as Col,
@@ -119,6 +122,8 @@ export function ResultsView({ results, kMax, focus, setFocus, baseline, setBasel
           <HitCurve results={R} kMax={kMax} lead={lead} focus={f !== lead ? f : null} onFocus={setFocus} show={allLines ? undefined : top3} />
         </div>
       </div>
+
+      <EmbeddingTable results={R} kMax={kMax} />
 
       <div className="card">
         <div className="card-head">
@@ -218,18 +223,18 @@ function Stats({ results, lead, hasGen, hasNdcg }: { results: Row[]; lead: numbe
   );
 }
 
-/* How many chunks to send the LLM so the answer is in its context for 95% of questions,
-   and the context size that means. 90% and 100% underneath for the trade-off. */
+/* Percentiles of the rank where the right chunk is found: p95 = 2 means 95% of the
+   questions have it within the top 2, which is also how many chunks to send the LLM. */
 function NeededCard({ r }: { r: Result }) {
-  const k95 = kNeeded(r, 0.95), k90 = kNeeded(r, 0.9), k100 = kNeeded(r, 1);
+  const k95 = kNeeded(r, 0.95), k50 = kNeeded(r, 0.5), k100 = kNeeded(r, 1);
   const kMax = Math.max(...Object.keys(r.metrics).filter((k) => k.startsWith("hit@")).map((k) => Number(k.slice(4))));
   const chars = (k?: number) => (k == null ? "–" : `≈ ${Math.round(k * r.avg_chunk_chars).toLocaleString("th-TH")} ตัวอักษร`);
   return (
     <div className="card stat">
-      <div className="label"><Term k="k@95">ต้องส่งกี่ chunk</Term></div>
-      <div className="fig">{k95 ?? `>${kMax}`}<small>chunk</small></div>
-      <div className="cmp">มีคำตอบ 95% ของคำถาม · {chars(k95)}</div>
-      <div className="cmp">90% ใช้ {k90 ?? `>${kMax}`} · 100% ใช้ {k100 ?? `>${kMax}`}</div>
+      <div className="label"><Term k="k@95">อันดับที่เจอ p95</Term></div>
+      <div className="fig"><small style={{ marginLeft: 0, marginRight: 4 }}>≤</small>{k95 ?? `>${kMax}`}</div>
+      <div className="cmp">95% ของคำถามเจอ chunk ที่ถูกภายในอันดับนี้ · ส่ง {k95 ?? "–"} chunk {chars(k95)}</div>
+      <div className="cmp">p50 อันดับ {k50 ?? `>${kMax}`} · ทุกข้อภายในอันดับ {k100 ?? `>${kMax}`}</div>
     </div>
   );
 }
