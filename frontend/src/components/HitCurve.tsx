@@ -94,6 +94,13 @@ export function HitCurve({ results, kMax, lead, focus, onFocus, show }: Props) {
         </g>
         <text className="axis-title" x={M.l + iw / 2} y={H - 4} textAnchor="middle">k · จำนวน chunk ที่ดึงมา</text>
 
+        {/* the 95% target: where each line crosses it is how many chunks you need */}
+        {0.95 >= y0 && (
+          <g>
+            <line x1={M.l} x2={W - M.r} y1={y(0.95)} y2={y(0.95)} stroke="var(--text-2)" strokeOpacity={0.5} strokeDasharray="5 4" />
+            <text x={W - M.r} y={y(0.95) - 6} textAnchor="end" style={{ fill: "var(--text-2)", font: "11px var(--sans)" }}>เป้า 95%</text>
+          </g>
+        )}
         {hoverK && <line x1={x(hoverK)} x2={x(hoverK)} y1={M.t} y2={M.t + ih} stroke="var(--line-strong)" />}
 
         {order.map((i) => {
