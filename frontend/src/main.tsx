@@ -16,12 +16,23 @@ import { RunsPage } from "./pages/Runs";
 import { RunDetailPage } from "./pages/RunDetail";
 import { SettingsPage } from "./pages/Settings";
 import { ComparePage } from "./pages/Compare";
+import { StartPage, isDismissed, setupSteps } from "./pages/Start";
+import { useStatus } from "./status";
+
+/* First visit: go to the setup steps until they are done or dismissed. */
+function Home() {
+  const { status } = useStatus();
+  if (!status) return null;
+  const done = setupSteps(status).every((s) => s.done);
+  return <Navigate to={done || isDismissed() ? "/documents" : "/start"} replace />;
+}
 
 const router = createBrowserRouter([
   {
     element: <Layout />,
     children: [
-      { index: true, element: <Navigate to="/documents" replace /> },
+      { index: true, element: <Home /> },
+      { path: "start", element: <StartPage /> },
       { path: "documents", element: <DocumentsPage /> },
       { path: "documents/:id", element: <DocumentsPage /> },
       { path: "qa", element: <QAPage /> },

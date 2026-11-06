@@ -1,8 +1,9 @@
-import { FileText, Gauge, ListChecks, Play, Settings2 } from "lucide-react";
+import { FileText, Flag, Gauge, ListChecks, Play, Settings2 } from "lucide-react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useEffect } from "react";
 import { useStatus } from "../status";
 import { ThemeToggle } from "./ThemeToggle";
+import { setupSteps } from "../pages/Start";
 
 function Mark() {
   return (
@@ -19,6 +20,8 @@ export function Layout() {
   const { pathname } = useLocation();
   useEffect(refresh, [pathname, refresh]);
   const c = status?.counts;
+  const steps = setupSteps(status);
+  const setupDone = steps.every((st) => st.done);
 
   const nav = [
     { to: "/documents", label: "เอกสาร", Icon: FileText, count: c?.documents },
@@ -40,6 +43,13 @@ export function Layout() {
           <div className="brand-sub">วัดผล RAG สำหรับเอกสารภาษาไทย</div>
         </div>
         <nav className="nav">
+          {!setupDone && (
+            <NavLink to="/start">
+              <Flag className="icon" />
+              <span>เริ่มต้นใช้งาน</span>
+              <em className="setup-progress" style={{ fontStyle: "normal" }}>{steps.filter((st) => st.done).length}/4</em>
+            </NavLink>
+          )}
           {nav.map(({ to, label, Icon, count }) => (
             <NavLink key={to} to={to}>
               <Icon className="icon" />
