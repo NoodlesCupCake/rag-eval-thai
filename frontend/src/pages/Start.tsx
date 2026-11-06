@@ -7,6 +7,7 @@ import type { Job, Status } from "../types";
 import { ErrorNote, JobProgress } from "../components/ui";
 import { Busy, useFeedback } from "../feedback";
 import { Term } from "../components/Term";
+import { HowItWorks } from "../components/HowItWorks";
 
 /* First-run setup: four steps from an empty app to a first benchmark result. Each step
    can be done in place. The LLM step is optional and can be skipped, and the whole
@@ -103,6 +104,13 @@ export function StartPage() {
         </div>
       </div>
       <ErrorNote error={error} />
+
+      <div className="card card-pad stack-8">
+        <HowItWorks />
+        <p className="small sec" style={{ margin: 0 }}>
+          ทุกคำถามรู้อยู่แล้วว่าคำตอบอยู่ตรงไหนในเอกสาร ระบบจึงวัดได้ว่า chunk ที่มีคำตอบถูกค้นเจอที่อันดับเท่าไร ยิ่งอยู่อันดับต้น ๆ ยิ่งแปลว่า embedding และการตัด chunk ดี
+        </p>
+      </div>
 
       <ol className="stepper">
         <Step n={1} title="เพิ่มเอกสาร" done={steps[0].done} open={current === 0}

@@ -7,6 +7,8 @@ import { LatencyChart, percentile } from "./LatencyChart";
 import { RankDistribution } from "./Ruler";
 import { Term } from "./Term";
 import { EmbeddingTable } from "./EmbeddingTable";
+import { RankScale } from "./RankScale";
+import type { Run } from "../types";
 
 /* Stats, charts and the comparison table for a set of results: one run, or several runs
    on the compare page (then each row also carries its run name). */
@@ -38,7 +40,8 @@ export function metric(r: Result, key: string): number | undefined {
   return r.metrics[key];
 }
 
-export function ResultsView({ results, kMax, focus, setFocus, baseline, setBaseline }: {
+export function ResultsView({ results, kMax, focus, setFocus, baseline, setBaseline, questions }: {
+  questions?: Run["questions"];
   results: Row[];
   kMax: number;
   focus: number | null;
@@ -103,6 +106,7 @@ export function ResultsView({ results, kMax, focus, setFocus, baseline, setBasel
 
   return (
     <>
+      <RankScale result={R[f]} kMax={kMax} questions={questions} />
       <Stats results={R} lead={lead} hasGen={hasGen} hasNdcg={hasNdcg} />
 
       <div className="card">

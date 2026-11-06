@@ -37,7 +37,8 @@ export function ComparePage() {
       )}
       {runs && !rows.length && <div className="card"><Empty title="รอบที่เลือกยังไม่มีผลลัพธ์" /></div>}
       {rows.length > 0 && (
-        <ResultsView results={rows} kMax={kMax} focus={focus} setFocus={setFocus} baseline={baseline} setBaseline={setBaseline} />
+        <ResultsView results={rows} kMax={kMax} focus={focus} setFocus={setFocus} baseline={baseline} setBaseline={setBaseline}
+                     questions={Object.assign({}, ...(runs ?? []).map((r) => r.questions ?? {}))} />
       )}
     </div>
   );

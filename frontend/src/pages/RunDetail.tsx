@@ -49,7 +49,7 @@ export function RunDetailPage() {
         </div>
       ) : (
         <>
-          <ResultsView results={results} kMax={run.spec.k_max} focus={focus} setFocus={setFocus} />
+          <ResultsView results={results} kMax={run.spec.k_max} focus={focus} setFocus={setFocus} questions={run.questions} />
           <Questions run={run} result={results[focus ?? lead]} />
         </>
       )}
