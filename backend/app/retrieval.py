@@ -53,17 +53,32 @@ def _prefixes(name: str) -> tuple[str, str]:
 
 
 class Embedder:
+    """A local sentence-transformers model, or an API model named "api:<provider>:<model>"."""
+
     def __init__(self, name: str):
+        from . import embed_api
         self.name = name
-        with _model_lock:
-            self.model = _load_model(name)
-        self.q_prefix, self.p_prefix = _prefixes(name)
+        self.api = name.startswith(embed_api.PREFIX)
+        if self.api:
+            embed_api.parse(name)  # fail early if the provider was removed
+            self.model = None
+            self.q_prefix = self.p_prefix = ""
+        else:
+            with _model_lock:
+                self.model = _load_model(name)
+            self.q_prefix, self.p_prefix = _prefixes(name)
 
     def passages(self, texts: list[str]) -> np.ndarray:
+        if self.api:
+            from . import embed_api
+            return embed_api.embed(self.name, texts, "document")
         return self.model.encode([self.p_prefix + t for t in texts], batch_size=32,
                                  normalize_embeddings=True, convert_to_numpy=True, show_progress_bar=False)
 
     def query(self, text: str) -> np.ndarray:
+        if self.api:
+            from . import embed_api
+            return embed_api.embed(self.name, [text], "query")[0]
         return self.model.encode([self.q_prefix + text], normalize_embeddings=True,
                                  convert_to_numpy=True, show_progress_bar=False)[0]
 
@@ -121,7 +136,7 @@ class DenseRetriever(Retriever):
     def stats(self, n_chunks: int) -> dict:
         """Embedding-model facts for the results page. Encoding speed is only known when
         this run actually encoded the chunks (not served from the cache)."""
-        return {"model": self.embedder.name, "dim": int(self.matrix.shape[1]), "device": device_name(),
+        return {"model": self.embedder.name, "dim": int(self.matrix.shape[1]), "device": "api" if self.embedder.api else device_name(),
                 "cached": self.cached, "encode_seconds": self.encode_seconds,
                 "chunks_per_sec": n_chunks / self.encode_seconds if self.encode_seconds else None}
 
@@ -178,7 +193,11 @@ def build_retriever(cfg: dict) -> Retriever:
 def retriever_label(cfg: dict) -> str:
     if cfg["type"] == "bm25":
         return "bm25"
-    return f"{cfg['type']}:{cfg['model'].split('/')[-1]}"
+    m = cfg["model"]
+    if m.startswith("api:"):  # api:<provider>:<model> -> provider·model
+        _, pid, model = m.split(":", 2)
+        return f"{cfg['type']}:{pid}·{model}"
+    return f"{cfg['type']}:{m.split('/')[-1]}"
 
 
 def timed_search(r: Retriever, query: str, k: int) -> tuple[list[tuple[int, float]], float]:

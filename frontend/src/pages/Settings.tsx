@@ -5,6 +5,7 @@ import { useStatus } from "../status";
 import type { ConnectionTest, LLMSettings, Preset } from "../types";
 import { ErrorNote, PageHead } from "../components/ui";
 import { Busy, useFeedback } from "../feedback";
+import { EmbeddingProviders } from "../components/EmbeddingProviders";
 
 interface Form {
   preset: string;
@@ -73,7 +74,7 @@ export function SettingsPage() {
 
   return (
     <div className="stack" style={{ maxWidth: 760 }}>
-      <PageHead title="ตั้งค่า LLM" sub="ใช้สร้างชุดคำถาม ตอบคำถามจาก chunk ที่ค้นเจอ และให้คะแนนคำตอบ การวัด retrieval ไม่ต้องใช้ LLM" />
+      <PageHead title="ตั้งค่า" sub="ใช้สร้างชุดคำถาม ตอบคำถามจาก chunk ที่ค้นเจอ และให้คะแนนคำตอบ การวัด retrieval ไม่ต้องใช้ LLM" />
 
       <div className="card card-pad stack-16">
         <Step n={1} title="ผู้ให้บริการ" done />
@@ -148,6 +149,7 @@ export function SettingsPage() {
           ใช้อยู่ตอนนี้ <span className="mono">{saved.provider} · {saved.model}{saved.base_url ? ` · ${saved.base_url}` : ""}</span> เก็บใน <code>data/settings.json</code> บนเครื่องนี้
         </div>
       ) : null}
+      <EmbeddingProviders />
       <div className="small muted">ถ้าใช้โมเดลเดียวกันทั้งตอบและให้คะแนน โมเดลอาจให้คะแนนตัวเองสูงเกินจริง โมเดลเล็กที่รันในเครื่องมักตัดสินภาษาไทยได้ไม่แม่น ควรสุ่มอ่านผลประกอบ</div>
     </div>
   );

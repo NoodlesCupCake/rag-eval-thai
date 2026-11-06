@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse, Response  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 from pydantic import BaseModel, Field  # noqa: E402
 
-from . import llm, runner, storage  # noqa: E402
+from . import embed_api, llm, runner, storage  # noqa: E402
 from .chunking import STRATEGIES, chunk_documents, chunk_text, word_spans  # noqa: E402
 from .metrics import is_hit  # noqa: E402
 from .qa import export_xlsx, locate_evidence, parse_upload, read_document_file, resolve_rows  # noqa: E402
@@ -51,7 +51,7 @@ app = FastAPI(
 def status():
     return {"llm_available": llm.available(), "default_model": llm.default_model(), "llm": llm.public_settings(),
             "device": device_name(),
-            "strategies": STRATEGIES, "retrievers": RETRIEVER_TYPES, "suggested_models": SUGGESTED_MODELS,
+            "strategies": STRATEGIES, "retrievers": RETRIEVER_TYPES, "suggested_models": SUGGESTED_MODELS + embed_api.model_ids(),
             "counts": {"documents": len(storage.list_documents()), "qa": storage.count_qa(), "qa_sets": len(storage.list_sets()),
                        "runs": len(storage.list_runs())}}
 
@@ -383,6 +383,63 @@ def settings_test(s: SettingsIn):
         return llm.test_connection(_resolve_settings(s))
     except llm.LLMError as e:
         raise HTTPException(400, str(e))
+
+
+# ---------- embedding providers (API) ----------
+
+@app.get("/api/embedding-providers", tags=["settings"])
+def emb_providers():
+    """Saved embedding APIs (keys masked) and presets for Voyage, OpenAI and Ollama."""
+    return {"providers": embed_api.list_providers(), "presets": embed_api.PRESETS}
+
+
+class EmbProviderIn(BaseModel):
+    id: str | None = None
+    name: str = Field(min_length=1, max_length=60)
+    kind: str  # voyage | openai
+    base_url: str = ""
+    api_key: str | None = None  # None keeps the saved key
+    models: list[str] = []
+
+
+def _emb_provider(p: EmbProviderIn) -> dict:
+    if p.kind not in ("voyage", "openai"):
+        raise HTTPException(400, "kind ต้องเป็น voyage หรือ openai")
+    d = p.model_dump()
+    if d["api_key"] is None and p.id:
+        old = embed_api.get_provider(p.id) or {}
+        d["api_key"] = old.get("api_key", "")
+    d["base_url"] = (d["base_url"] or "").strip().rstrip("/")
+    if p.kind == "openai" and not d["base_url"]:
+        raise HTTPException(400, "ต้องใส่ base URL")
+    return d
+
+
+@app.put("/api/embedding-providers", tags=["settings"])
+def emb_provider_save(p: EmbProviderIn):
+    if not [m for m in p.models if m.strip()]:
+        raise HTTPException(400, "ใส่ชื่อโมเดลอย่างน้อย 1 ตัว")
+    return embed_api.save_provider(_emb_provider(p))
+
+
+@app.post("/api/embedding-providers/test", tags=["settings"])
+def emb_provider_test(p: EmbProviderIn):
+    """Embed one short text with the first model, without saving. Returns the vector size."""
+    d = _emb_provider(p)
+    models = [m.strip() for m in p.models if m.strip()]
+    if not models:
+        raise HTTPException(400, "ใส่ชื่อโมเดลอย่างน้อย 1 ตัว")
+    try:
+        return embed_api.test(d, models[0])
+    except embed_api.EmbedAPIError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.delete("/api/embedding-providers/{pid}", tags=["settings"])
+def emb_provider_delete(pid: str):
+    if not embed_api.delete_provider(pid):
+        raise HTTPException(404, "ไม่พบ")
+    return {"ok": True}
 
 
 # ---------- runs ----------

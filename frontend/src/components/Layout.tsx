@@ -29,7 +29,7 @@ export function Layout() {
     { to: "/bench", label: "Benchmark", Icon: Play },
     { to: "/runs", label: "ผลลัพธ์", Icon: Gauge, count: c?.runs },
     { to: "/chat", label: "ลองถาม", Icon: MessageSquare },
-    { to: "/settings", label: "ตั้งค่า LLM", Icon: Settings2 },
+    { to: "/settings", label: "ตั้งค่า", Icon: Settings2 },
     { to: "/method", label: "วิธีการวัด", Icon: BookOpen },
   ];
 
