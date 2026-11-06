@@ -41,7 +41,8 @@ export function ThemeToggle() {
     doc.startViewTransition(apply).ready.then(() => {
       document.documentElement.animate(
         { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${r}px at ${x}px ${y}px)`] },
-        { duration: 560, easing: "cubic-bezier(0.22, 1, 0.36, 1)", pseudoElement: "::view-transition-new(root)" },
+        // slow and even, so the spread reads like ink soaking outward rather than a flash
+        { duration: 1200, easing: "cubic-bezier(0.45, 0, 0.25, 1)", pseudoElement: "::view-transition-new(root)" },
       );
     });
   }
