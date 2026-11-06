@@ -1,11 +1,11 @@
-import { useRef, useState, type MouseEvent } from "react";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
 import type { Result } from "../types";
 import { pct } from "../format";
 
 /* Hit@k drawn like a graduated instrument: the leading config in amber with its readings
    at k = 1, 3 and 5 marked on the scale, the focused config in ink, the rest quiet. */
 
-const W = 760, H = 340, M = { l: 52, r: 24, t: 20, b: 48 };
+const M = { l: 52, r: 24, t: 20, b: 48 };
 const MARKS = [1, 3, 5];
 
 interface Props {
@@ -18,7 +18,18 @@ interface Props {
 
 export function HitCurve({ results, kMax, lead, focus, onFocus }: Props) {
   const ref = useRef<SVGSVGElement>(null);
+  const box = useRef<HTMLDivElement>(null);
   const [hoverK, setHoverK] = useState<number | null>(null);
+  // Draw at the container's real width so labels stay at their set size on phones.
+  const [W, setW] = useState(760);
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([e]) => setW(Math.max(300, Math.round(e.contentRect.width))));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const H = W < 560 ? 280 : 340;
   const iw = W - M.l - M.r, ih = H - M.t - M.b;
   const hit = (r: Result, k: number) => r.metrics[`hit@${k}`] ?? 0;
 
@@ -55,7 +66,7 @@ export function HitCurve({ results, kMax, lead, focus, onFocus }: Props) {
   const tipLeft = hoverK ? (x(hoverK) / W) * 100 : 0;
 
   return (
-    <div className="chart">
+    <div className="chart" ref={box}>
       <svg ref={ref} viewBox={`0 0 ${W} ${H}`} onMouseMove={move} onMouseLeave={() => setHoverK(null)}
            role="img" aria-label="Hit at k for each configuration">
         <g className="grid">
@@ -67,10 +78,11 @@ export function HitCurve({ results, kMax, lead, focus, onFocus }: Props) {
           <line x1={M.l} x2={W - M.r} y1={M.t + ih} y2={M.t + ih} stroke="var(--line-strong)" />
           {ks.map((k) => {
             const long = k === 1 || k % 5 === 0;
+            const label = W >= 560 || long || k === 3;
             return (
               <g key={k}>
                 <line x1={x(k)} x2={x(k)} y1={M.t + ih} y2={M.t + ih + (long ? 8 : 4)} stroke="var(--line-strong)" />
-                <text x={x(k)} y={M.t + ih + 22} textAnchor="middle">{k}</text>
+                {label && <text x={x(k)} y={M.t + ih + 22} textAnchor="middle">{k}</text>}
               </g>
             );
           })}
