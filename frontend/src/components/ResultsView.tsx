@@ -8,6 +8,7 @@ import { RankDistribution } from "./Ruler";
 import { Term } from "./Term";
 import { EmbeddingTable } from "./EmbeddingTable";
 import { RankScale } from "./RankScale";
+import { EmbeddingMap } from "./EmbeddingMap";
 import type { Run } from "../types";
 
 /* Stats, charts and the comparison table for a set of results: one run, or several runs
@@ -40,8 +41,10 @@ export function metric(r: Result, key: string): number | undefined {
   return r.metrics[key];
 }
 
-export function ResultsView({ results, kMax, focus, setFocus, baseline, setBaseline, questions }: {
+export function ResultsView({ results, kMax, focus, setFocus, baseline, setBaseline, questions, runId }: {
   questions?: Run["questions"];
+  /** single-run view only: enables the embedding map */
+  runId?: string;
   results: Row[];
   kMax: number;
   focus: number | null;
@@ -128,6 +131,7 @@ export function ResultsView({ results, kMax, focus, setFocus, baseline, setBasel
       </div>
 
       <EmbeddingTable results={R} kMax={kMax} showSpeed={extra} />
+      {runId && <EmbeddingMap runId={runId} index={f} result={R[f]} />}
 
       <div className="card">
         <div className="card-head">
