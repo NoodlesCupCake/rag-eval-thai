@@ -6,6 +6,7 @@ import { date } from "../format";
 import { Empty, ErrorNote, PageHead } from "../components/ui";
 import { ResultsView } from "../components/ResultsView";
 import { Questions } from "./Questions";
+import { RagResult } from "../components/RagResult";
 
 export function RunDetailPage() {
   const { id = "" } = useParams();
@@ -38,7 +39,7 @@ export function RunDetailPage() {
 
   return (
     <div className="stack">
-      <PageHead back={{ to: "/runs", label: "ผลลัพธ์ทั้งหมด" }} title={run.name}
+      <PageHead back={{ to: "/runs", label: "ผลลัพธ์ทั้งหมด" }} title={<>{run.name} <span className={"kind-badge " + (run.kind ?? "retrieval")}>{run.kind === "rag" ? "RAG" : "Embedding"}</span></>}
                 sub={<span className="mono small">{date(run.created_at)} · {run.qa_set ? `${run.qa_set.name} · ` : ""}{run.n_questions} คำถาม · {results.length}/{total} configs{run.status === "running" ? " · กำลังรัน" : ""}</span>} />
       {run.error && <ErrorNote error={"รันไม่สำเร็จ: " + run.error} />}
       {results.length === 0 ? (
@@ -48,7 +49,7 @@ export function RunDetailPage() {
           </Empty>
         </div>
       ) : (
-        <>
+        run.kind === "rag" ? <RagResult run={run} /> : <>
           <ResultsView results={results} kMax={run.spec.k_max} focus={focus} setFocus={setFocus} questions={run.questions} />
           <Questions run={run} result={results[focus ?? lead]} />
         </>

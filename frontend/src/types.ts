@@ -153,6 +153,7 @@ export interface Result {
 
 export interface Run {
   id: string;
+  kind?: "retrieval" | "rag";
   name: string;
   status: "running" | "done" | "failed";
   created_at: number;
@@ -161,7 +162,7 @@ export interface Run {
     k_max: number;
     chunkings: ChunkCfg[];
     retrievers: RetrieverCfg[];
-    generation?: { enabled: boolean; top_k: number; model: string | null };
+    generation?: { enabled: boolean; top_k: number; model: string | null; judge_model?: string | null };
   };
   n_questions: number;
   qa_set?: { id: string; name: string };
@@ -178,6 +179,7 @@ export interface SummaryRow {
 
 export interface RunSummary {
   id: string;
+  kind: "retrieval" | "rag";
   name: string;
   status: Run["status"];
   created_at: number;

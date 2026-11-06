@@ -193,7 +193,9 @@ def list_runs() -> list[dict]:
     for r in runs:
         if not r:
             continue
+        kind = r.get("kind") or ("rag" if (r.get("spec", {}).get("generation") or {}).get("enabled") else "retrieval")
         out.append({k: r.get(k) for k in ("id", "name", "status", "created_at", "finished_at", "n_questions", "error", "qa_set")}
+                   | {"kind": kind}
                    | {"n_configs": len(r.get("results", [])), "summary": [res["metrics"] | {"label": res["label"]} for res in r.get("results", [])]})
     out.sort(key=lambda r: r["created_at"], reverse=True)
     return out

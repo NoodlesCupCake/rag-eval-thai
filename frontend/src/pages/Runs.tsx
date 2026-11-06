@@ -15,6 +15,7 @@ export function RunsPage() {
   const navigate = useNavigate();
   const [runs, setRuns] = useState<RunSummary[] | null>(null);
   const [picked, setPicked] = useState<string[]>([]);
+  const [kind, setKind] = useState<"all" | "retrieval" | "rag">("all");
   const pick = (id: string) => setPicked(picked.includes(id) ? picked.filter((x) => x !== id) : [...picked, id]);
   const load = () => api.get<RunSummary[]>("/runs").then(setRuns);
   useEffect(() => { load(); }, []);
@@ -38,6 +39,11 @@ export function RunsPage() {
                 title="เลือกอย่างน้อย 2 รอบในตาราง">เปรียบเทียบ{picked.length ? ` ${picked.length} รอบ` : ""}</button>
         <Link className="btn primary" to="/bench"><Play className="icon" />รันใหม่</Link>
       </PageHead>
+      <div className="seg" style={{ alignSelf: "flex-start" }}>
+        {([["all", "ทั้งหมด"], ["retrieval", "ประเมิน Embedding"], ["rag", "ประเมิน RAG"]] as const).map(([k, l]) => (
+          <button key={k} className={kind === k ? "on" : ""} onClick={() => setKind(k)}>{l}</button>
+        ))}
+      </div>
       <div className="card">
         {runs && runs.length === 0 && (
           <Empty title="ยังไม่มีผลลัพธ์"><p>ไปที่หน้า Benchmark เพื่อรันรอบแรก</p></Empty>
@@ -48,12 +54,12 @@ export function RunsPage() {
               <thead>
                 <tr>
                   <th style={{ width: 40 }} />
-                  <th>รอบ</th><th>ชุดคำถาม</th><th>สถานะ</th><th className="num">configs</th><th className="num">คำถาม</th>
-                  <th>config ที่ดีที่สุด</th><th className="num">Hit@3</th><th className="num">MRR</th><th />
+                  <th>รอบ</th><th>ประเภท</th><th>ชุดคำถาม</th><th>สถานะ</th><th className="num">configs</th><th className="num">คำถาม</th>
+                  <th>config ที่ดีที่สุด</th><th className="num">ผลหลัก</th><th className="num">MRR</th><th />
                 </tr>
               </thead>
               <tbody>
-                {runs.map((r) => {
+                {runs.filter((r) => kind === "all" || r.kind === kind).map((r) => {
                   const b = best(r);
                   return (
                     <tr key={r.id} className={"clickable" + (picked.includes(r.id) ? " focus" : "")} onClick={() => navigate("/runs/" + r.id)}>
@@ -62,12 +68,15 @@ export function RunsPage() {
                                checked={picked.includes(r.id)} onChange={() => pick(r.id)} />
                       </td>
                       <td><div style={{ color: "var(--text)" }}>{r.name}</div><div className="meta">{date(r.created_at)}</div></td>
+                      <td><span className={"kind-badge " + r.kind}>{r.kind === "rag" ? "RAG" : "Embedding"}</span></td>
                       <td className="small">{r.qa_set?.name ?? "–"}</td>
                       <td className="small">{STATUS[r.status] ?? r.status}</td>
                       <td className="num">{r.n_configs}</td>
                       <td className="num">{r.n_questions}</td>
                       <td>{b ? <CfgLabel label={b.label} /> : "–"}</td>
-                      <td className="num strong">{b ? pct(Number(b["hit@3"])) : "–"}</td>
+                      <td className="num strong" title={r.kind === "rag" ? "LLM ตอบถูก" : "Hit@3"}>
+                        {b ? (r.kind === "rag" ? `ตอบถูก ${pct(Number(b.answer_correctness ?? 0))}` : `Hit@3 ${pct(Number(b["hit@3"]))}`) : "–"}
+                      </td>
                       <td className="num">{b ? Number(b.mrr).toFixed(3) : "–"}</td>
                       <td className="num">
                         <button className="btn ghost sm icon-only" aria-label="ลบ" onClick={(e) => { e.stopPropagation(); remove(r.id); }}>

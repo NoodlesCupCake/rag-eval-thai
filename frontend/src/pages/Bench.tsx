@@ -5,7 +5,6 @@ import { api } from "../api";
 import { Busy, useAction, useFeedback } from "../feedback";
 import { useStatus } from "../status";
 import type { ChunkCfg, Job, QASet } from "../types";
-import { num } from "../format";
 import { ErrorNote, JobProgress, PageHead } from "../components/ui";
 import { Term } from "../components/Term";
 
@@ -50,7 +49,6 @@ export function BenchPage() {
   const [name, setName] = useState("");
   const [kMax, setKMax] = useState(10);
   const [sample, setSample] = useState("");
-  const [gen, setGen] = useState({ enabled: false, top_k: 3 });
   const [jobId, setJobId] = useState<string | null>(null);
   const [error] = useState<string | null>(null);
   const { track, jobs } = useFeedback();
@@ -76,7 +74,7 @@ export function BenchPage() {
         k_max: kMax,
         qa_set: setId || null,
         sample: sample ? Number(sample) : null,
-        generation: gen,
+        kind: "retrieval",
       }));
     if (!j) return;
     refresh();
@@ -87,7 +85,7 @@ export function BenchPage() {
 
   return (
     <div className="stack">
-      <PageHead title="Benchmark" sub="รันทุกคู่ระหว่างวิธีตัด chunk กับ retriever แล้ววัด Hit@k, MRR, coverage และ latency ต่อคำถาม" />
+      <PageHead title="ประเมิน Embedding" sub="วัดว่า chunk ที่ตอบคำถามได้จริงถูกค้นเจอที่อันดับเท่าไร เทียบวิธีตัด chunk, embedding model และ retriever ไม่ต้องใช้ LLM" />
       <div className="split">
         <div className="stack">
           <div className="card card-pad stack-16">
@@ -188,20 +186,7 @@ export function BenchPage() {
             <label className="field"><span><Term k="k_max">k สูงสุด</Term></span><input className="input mono" type="number" min={1} max={20} value={kMax} onChange={(e) => setKMax(Number(e.target.value))} /></label>
             <label className="field"><span>สุ่มคำถาม</span><input className="input mono" type="number" min={1} placeholder="ทั้งหมด" value={sample} onChange={(e) => setSample(e.target.value)} /></label>
           </div>
-          <hr className="rule" />
-          <label className="check">
-            <input type="checkbox" checked={gen.enabled} disabled={!status?.llm_available} onChange={(e) => setGen({ ...gen, enabled: e.target.checked })} />
-            ให้ LLM ตอบและให้คะแนนคำตอบ
-          </label>
-          {!status?.llm_available && <div className="small muted"><Link to="/settings">ตั้งค่า LLM</Link> ก่อน การวัด retrieval ไม่ต้องใช้</div>}
-          {gen.enabled && (
-            <>
-              <label className="field"><span>ส่ง top k ให้ LLM</span>
-                <input className="input mono" type="number" min={1} max={10} value={gen.top_k} onChange={(e) => setGen({ ...gen, top_k: Number(e.target.value) })} />
-              </label>
-              <div className="small muted">เรียก <span className="mono">{status?.llm.model}</span> {num(nUsed * nConfigs * 2)} ครั้ง ตอบและตัดสินต่อคำถามต่อ config</div>
-            </>
-          )}
+          <div className="notice small">อยากรู้ว่า LLM ตอบถูกกี่ % ใช้ <Link to="/rag">ประเมิน RAG</Link> หน้านี้วัดเฉพาะว่า chunk ที่ถูกอยู่อันดับเท่าไร ไม่ใช้ LLM</div>
           <hr className="rule" />
           <div className="small sec"><span className="mono">{nConfigs}</span> configs × <span className="mono">{nUsed}</span> คำถาม</div>
           <JobProgress job={job} />

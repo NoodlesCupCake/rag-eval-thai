@@ -431,6 +431,11 @@ tr.lead .dist i.first { background: var(--accent); }
 .how .bar { fill: var(--raised); }
 .how .bar.hit { fill: var(--accent-soft); stroke: var(--accent); }
 
+.kind-badge { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 6px; font: 500 12px/1 var(--sans);
+  vertical-align: middle; background: var(--raised); color: var(--text-2); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.kind-badge.rag { color: var(--accent-ink); box-shadow: inset 0 0 0 1px var(--accent); background: var(--accent-soft); }
+h1 .kind-badge { margin-left: 8px; vertical-align: 6px; }
+
 @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 .enter { animation: rise 400ms var(--ease) both; }
 

@@ -59,12 +59,15 @@ def start_run(spec: dict) -> dict:
     if gen.get("enabled"):
         ls = llm.settings()
         gen["model"] = gen.get("model") or ls["model"]
+        gen["judge_model"] = gen.get("judge_model") or gen["model"]
         gen["provider"], gen["base_url"] = ls["provider"], ls["base_url"]
     if spec.get("sample") and spec["sample"] < len(qa):
         qa = random.Random(0).sample(qa, spec["sample"])
 
     configs = [(c, r) for c in spec["chunkings"] for r in spec["retrievers"]]
-    run = {"id": storage.new_id("run"), "name": spec.get("name") or time.strftime("Run %d %b %H:%M"),
+    kind = spec.get("kind") or ("rag" if gen.get("enabled") else "retrieval")
+    run = {"id": storage.new_id("run"), "kind": kind,
+           "name": spec.get("name") or (("RAG " if kind == "rag" else "Embedding ") + time.strftime("%d %b %H:%M")),
            "status": "running", "created_at": storage.now(), "finished_at": None, "spec": spec,
            "n_questions": len(qa), "results": [], "error": None,
            "qa_set": {"id": set_id, "name": qa_set["name"] if qa_set else set_id},
@@ -155,7 +158,7 @@ def _generate(per_q, qa, gen):
         try:
             ans, ms = llm.answer(q["question"], ctx, model)
             p["answer"], p["gen_latency_ms"] = ans, ms
-            p["judge"] = llm.judge(q["question"], q["answer"], ans, ctx, model)
+            p["judge"] = llm.judge(q["question"], q["answer"], ans, ctx, gen.get("judge_model") or model)
         except llm.LLMError as e:
             p["gen_error"] = str(e)
 

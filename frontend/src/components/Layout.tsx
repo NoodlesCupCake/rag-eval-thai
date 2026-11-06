@@ -1,4 +1,4 @@
-import { BookOpen, Braces, FileText, Flag, Gauge, ListChecks, MessageSquare, Play, Settings2 } from "lucide-react";
+import { BookOpen, Braces, ClipboardCheck, FileText, Flag, Gauge, ListChecks, MessageSquare, Play, Settings2 } from "lucide-react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useEffect } from "react";
 import { useStatus } from "../status";
@@ -26,7 +26,8 @@ export function Layout() {
   const nav = [
     { to: "/documents", label: "เอกสาร", Icon: FileText, count: c?.documents },
     { to: "/qa", label: "ชุดคำถาม", Icon: ListChecks, count: c?.qa },
-    { to: "/bench", label: "Benchmark", Icon: Play },
+    { to: "/bench", label: "ประเมิน Embedding", Icon: Play },
+    { to: "/rag", label: "ประเมิน RAG", Icon: ClipboardCheck },
     { to: "/runs", label: "ผลลัพธ์", Icon: Gauge, count: c?.runs },
     { to: "/chat", label: "ลองถาม", Icon: MessageSquare },
     { to: "/settings", label: "ตั้งค่า", Icon: Settings2 },

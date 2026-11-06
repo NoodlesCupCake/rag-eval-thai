@@ -458,10 +458,12 @@ class RetrieverCfg(BaseModel):
 class GenCfg(BaseModel):
     enabled: bool = False
     top_k: int = Field(3, ge=1, le=10)
-    model: str | None = None
+    model: str | None = None        # answers; defaults to the LLM in settings
+    judge_model: str | None = None  # grades; defaults to the answer model
 
 
 class RunReq(BaseModel):
+    kind: str = Field("retrieval", description="retrieval: where the right chunk ranks · rag: answer accuracy judged by an LLM")
     name: str | None = None
     chunkings: list[ChunkCfg] = Field(min_length=1)
     retrievers: list[RetrieverCfg] = Field(min_length=1)
@@ -529,6 +531,10 @@ def chat(req: ChatReq):
 
 @app.post("/api/runs", tags=["runs"])
 def run_create(req: RunReq):
+    if req.kind not in ("retrieval", "rag"):
+        raise HTTPException(400, "kind ต้องเป็น retrieval หรือ rag")
+    if req.kind == "rag":
+        req.generation.enabled = True
     for c in req.chunkings:
         if c.strategy not in STRATEGIES:
             raise HTTPException(400, f"unknown strategy {c.strategy}")

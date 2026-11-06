@@ -4,10 +4,16 @@ RAG Eval measures how well a RAG pipeline finds the right passage in
 Thai documents, so you can choose the chunking method, chunk size, retriever and
 embedding model from numbers instead of guesses.
 
-- **Retrieval:** Hit@1/3/5/10, MRR, Coverage@k, and per-query latency at p50 / p95 / p99
-- **Generation (optional):** an LLM answers from the top-k chunks, then grades each
-  answer against the reference (correct / partial / incorrect) and checks whether it is
-  grounded in the retrieved context
+Two separate evaluations on the same documents and QA sets:
+
+- **ประเมิน Embedding (retrieval):** where does the chunk that really answers each question
+  rank? Rank p50 / p95, Hit@1/3/5/10, MRR, nDCG@10. Compare chunking, embedding models
+  (local Hugging Face models, or Voyage / OpenAI / Ollama over an API) and BM25 / dense /
+  hybrid retrieval. No LLM, fast and free
+- **ประเมิน RAG (end to end):** one retrieval config, the top k chunks go to an LLM that
+  answers, and a judge LLM (which can differ from the answering one) grades each answer
+  against the reference. % correct, % grounded in the documents, and for every wrong
+  answer whether retrieval missed the chunk or the LLM answered badly
 - **Any LLM:** Claude, or any OpenAI-compatible server (Ollama, LM Studio, vLLM, OpenAI).
   Set the base URL, API key and model on the **ตั้งค่า LLM** page
 - **Questions from any file:** drop an Excel, CSV, PDF, Word or text file (20 MB max,
