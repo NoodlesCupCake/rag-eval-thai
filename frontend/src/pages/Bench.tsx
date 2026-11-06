@@ -6,6 +6,7 @@ import { useStatus } from "../status";
 import type { ChunkCfg, Job } from "../types";
 import { num } from "../format";
 import { ErrorNote, JobProgress, PageHead } from "../components/ui";
+import { Term } from "../components/Term";
 
 interface RetRow { type: string; model: string }
 
@@ -69,7 +70,7 @@ export function BenchPage() {
             <div className="card-head"><h2>วิธีตัด chunk</h2><span className="hint">ขนาดวัดเป็นตัวอักษรทุกวิธี เทียบกันได้ตรง ๆ</span></div>
             <div className="card-pad stack-16">
               <div className="cfg-table chunks">
-                <span className="th">วิธี</span><span className="th">ขนาด</span><span className="th">overlap</span><span />
+                <span className="th"><Term k="strategy">วิธี</Term></span><span className="th"><Term k="size">ขนาด</Term></span><span className="th"><Term k="overlap">overlap</Term></span><span />
                 {chunks.map((c, i) => (
                   <Row key={i} onRemove={chunks.length > 1 ? () => setChunks(chunks.filter((_, j) => j !== i)) : undefined}>
                     <select className="input" aria-label="วิธี" value={c.strategy} onChange={(e) => editChunk(i, { strategy: e.target.value })}>
@@ -91,7 +92,7 @@ export function BenchPage() {
                 {status?.suggested_models.map((m) => <option key={m.id} value={m.id}>{m.note}</option>)}
               </datalist>
               <div className="cfg-table rets">
-                <span className="th">ชนิด</span><span className="th">Embedding model จาก Hugging Face</span><span />
+                <span className="th"><Term k="bm25">bm25</Term> · <Term k="dense">dense</Term> · <Term k="hybrid">hybrid</Term></span><span className="th">Embedding model จาก Hugging Face</span><span />
                 {rets.map((r, i) => (
                   <Row key={i} onRemove={rets.length > 1 ? () => setRets(rets.filter((_, j) => j !== i)) : undefined}>
                     <select className="input" aria-label="ชนิด" value={r.type}
@@ -114,7 +115,7 @@ export function BenchPage() {
         <div className="card card-pad stack-16" style={{ position: "sticky", top: 32 }}>
           <label className="field"><span>ชื่อรอบนี้</span><input className="input" placeholder="ลองขนาด 400" value={name} onChange={(e) => setName(e.target.value)} /></label>
           <div className="form-grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
-            <label className="field"><span>k สูงสุด</span><input className="input mono" type="number" min={1} max={20} value={kMax} onChange={(e) => setKMax(Number(e.target.value))} /></label>
+            <label className="field"><span><Term k="k_max">k สูงสุด</Term></span><input className="input mono" type="number" min={1} max={20} value={kMax} onChange={(e) => setKMax(Number(e.target.value))} /></label>
             <label className="field"><span>สุ่มคำถาม</span><input className="input mono" type="number" min={1} placeholder="ทั้งหมด" value={sample} onChange={(e) => setSample(e.target.value)} /></label>
           </div>
           <hr className="rule" />

@@ -26,6 +26,12 @@ def is_hit(chunk: Chunk, evidence: list[dict]) -> bool:
     return False
 
 
+def gold_chunks(chunks: list[Chunk], evidence: list[dict]) -> list[str]:
+    """Ids of the chunks that count as a hit for this evidence: where the answer lives
+    under this chunking config. Chunk ids are "<doc_id>:<index>", index from 0."""
+    return [c.id for c in chunks if is_hit(c, evidence)]
+
+
 def coverage(chunks: list[Chunk], evidence: list[dict]) -> float:
     """Share of evidence characters covered by the union of the given chunks."""
     total = covered = 0
@@ -48,11 +54,20 @@ def score_question(retrieved: list[Chunk], evidence: list[dict], k_max: int) -> 
     return {"hit_rank": hit_rank, "coverage": cov}
 
 
+def ndcg(retrieved: list[Chunk], evidence: list[dict], n_relevant: int, k: int = 10) -> float:
+    """Binary-relevance nDCG@k, as reported by BEIR / MTEB. A retrieved chunk is relevant
+    when it counts as a hit; the ideal ranking puts all n_relevant chunks first."""
+    import math
+    dcg = sum(1 / math.log2(i + 2) for i, c in enumerate(retrieved[:k]) if is_hit(c, evidence))
+    idcg = sum(1 / math.log2(i + 2) for i in range(min(n_relevant, k)))
+    return dcg / idcg if idcg else 0.0
+
+
 def percentiles(values: list[float]) -> dict:
     if not values:
-        return {"p50": None, "p95": None, "p99": None, "mean": None}
+        return {"p50": None, "p90": None, "p95": None, "p99": None, "mean": None}
     a = np.asarray(values)
-    return {"p50": float(np.percentile(a, 50)), "p95": float(np.percentile(a, 95)),
+    return {"p50": float(np.percentile(a, 50)), "p90": float(np.percentile(a, 90)), "p95": float(np.percentile(a, 95)),
             "p99": float(np.percentile(a, 99)), "mean": float(a.mean())}
 
 
@@ -65,6 +80,8 @@ def aggregate(per_q: list[dict], k_max: int) -> dict:
     for k in range(1, k_max + 1):
         out[f"hit@{k}"] = sum(1 for r in ranks if r and r <= k) / n
     out["mrr"] = sum(1.0 / r for r in ranks if r) / n
+    if all("ndcg" in q for q in per_q):
+        out["ndcg@10"] = sum(q["ndcg"] for q in per_q) / n
     for k in K_VALUES:
         if k <= k_max:
             out[f"coverage@{k}"] = sum(q["coverage"][k] for q in per_q) / n

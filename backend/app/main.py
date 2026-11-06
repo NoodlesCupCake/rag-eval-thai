@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field  # noqa: E402
 
 from . import llm, runner, storage  # noqa: E402
 from .chunking import STRATEGIES, chunk_text, word_spans  # noqa: E402
+from .metrics import is_hit  # noqa: E402
 from .qa import locate_evidence, parse_upload, read_document_file, resolve_rows  # noqa: E402
 from .retrieval import RETRIEVER_TYPES, SUGGESTED_MODELS, device_name  # noqa: E402
 
@@ -112,14 +113,23 @@ def load_samples():
 # ---------- QA ----------
 
 @app.get("/api/qa")
-def qa_list():
+def qa_list(strategy: str | None = None, size: int = 400, overlap: int = 0):
+    """The QA set. With a chunking config, each item also lists the chunks its evidence
+    falls in under that config (numbers match the document page's chunk preview)."""
     docs = {d["id"]: d for d in storage.list_documents(include_text=True)}
+    if strategy and strategy not in STRATEGIES:
+        raise HTTPException(400, f"unknown strategy {strategy}")
+    chunked = {i: chunk_text(i, d["text"], strategy, size, overlap) for i, d in docs.items()} if strategy else {}
     out = []
     for q in storage.list_qa():
         ev = q["evidence"][0]
         d = docs.get(ev["doc_id"])
-        out.append(q | {"doc_name": d["name"] if d else None,
-                        "evidence_text": d["text"][ev["start"]:ev["end"]] if d else ""})
+        item = q | {"doc_name": d["name"] if d else None,
+                    "evidence_text": d["text"][ev["start"]:ev["end"]] if d else ""}
+        if strategy:
+            item["chunks"] = [{"id": c.id, "doc_id": c.doc_id, "number": int(c.id.rsplit(":", 1)[1]) + 1}
+                              for e in q["evidence"] for c in chunked.get(e["doc_id"], []) if is_hit(c, [e])]
+        out.append(item)
     return out
 
 

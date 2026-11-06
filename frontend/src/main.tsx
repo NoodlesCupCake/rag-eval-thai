@@ -15,6 +15,7 @@ import { BenchPage } from "./pages/Bench";
 import { RunsPage } from "./pages/Runs";
 import { RunDetailPage } from "./pages/RunDetail";
 import { SettingsPage } from "./pages/Settings";
+import { ComparePage } from "./pages/Compare";
 
 const router = createBrowserRouter([
   {
@@ -28,6 +29,7 @@ const router = createBrowserRouter([
       { path: "runs", element: <RunsPage /> },
       { path: "runs/:id", element: <RunDetailPage /> },
       { path: "settings", element: <SettingsPage /> },
+      { path: "compare", element: <ComparePage /> },
       { path: "*", element: <Navigate to="/documents" replace /> },
     ],
   },

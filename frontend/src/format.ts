@@ -16,3 +16,7 @@ export function median(xs: number[]): number {
 
 /** Signed difference in percentage points, e.g. "+6.9 pt". */
 export const pts = (d: number) => `${d >= 0 ? "+" : "−"}${Math.abs(d * 100).toFixed(1)} pt`;
+
+/** "doc_ab12:5" -> 6, the number shown in the document page's chunk preview. */
+export const chunkNo = (id: string) => Number(id.slice(id.lastIndexOf(":") + 1)) + 1;
+export const chunkDoc = (id: string) => id.slice(0, id.lastIndexOf(":"));

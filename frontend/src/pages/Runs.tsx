@@ -13,6 +13,8 @@ export function RunsPage() {
   const { refresh } = useStatus();
   const navigate = useNavigate();
   const [runs, setRuns] = useState<RunSummary[] | null>(null);
+  const [picked, setPicked] = useState<string[]>([]);
+  const pick = (id: string) => setPicked(picked.includes(id) ? picked.filter((x) => x !== id) : [...picked, id]);
   const load = () => api.get<RunSummary[]>("/runs").then(setRuns);
   useEffect(() => { load(); }, []);
 
@@ -28,6 +30,8 @@ export function RunsPage() {
   return (
     <div className="stack">
       <PageHead title="ผลลัพธ์" sub={<>ทุกรอบเก็บเป็นไฟล์ JSON ใน <code>data/runs</code></>}>
+        <button className="btn" disabled={picked.length < 2} onClick={() => navigate("/compare?runs=" + picked.join(","))}
+                title="เลือกอย่างน้อย 2 รอบในตาราง">เปรียบเทียบ{picked.length ? ` ${picked.length} รอบ` : ""}</button>
         <Link className="btn primary" to="/bench"><Play className="icon" />รันใหม่</Link>
       </PageHead>
       <div className="card">
@@ -39,6 +43,7 @@ export function RunsPage() {
             <table>
               <thead>
                 <tr>
+                  <th style={{ width: 40 }} />
                   <th>รอบ</th><th>สถานะ</th><th className="num">configs</th><th className="num">คำถาม</th>
                   <th>config ที่ดีที่สุด</th><th className="num">Hit@3</th><th className="num">MRR</th><th />
                 </tr>
@@ -47,7 +52,11 @@ export function RunsPage() {
                 {runs.map((r) => {
                   const b = best(r);
                   return (
-                    <tr key={r.id} className="clickable" onClick={() => navigate("/runs/" + r.id)}>
+                    <tr key={r.id} className={"clickable" + (picked.includes(r.id) ? " focus" : "")} onClick={() => navigate("/runs/" + r.id)}>
+                      <td onClick={(e) => e.stopPropagation()}>
+                        <input type="checkbox" className="check-box" aria-label={`เลือก ${r.name} เพื่อเปรียบเทียบ`}
+                               checked={picked.includes(r.id)} onChange={() => pick(r.id)} />
+                      </td>
                       <td><div style={{ color: "var(--text)" }}>{r.name}</div><div className="meta">{date(r.created_at)}</div></td>
                       <td className="small">{STATUS[r.status] ?? r.status}</td>
                       <td className="num">{r.n_configs}</td>

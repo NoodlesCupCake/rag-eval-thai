@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from . import llm, storage
 from .chunking import chunk_documents, chunk_text, label as chunk_label
-from .metrics import aggregate, score_question
+from .metrics import aggregate, gold_chunks, ndcg, score_question
 from .qa import locate_evidence
 from .retrieval import build_retriever, retriever_label, timed_search
 
@@ -88,8 +88,10 @@ def _run_benchmark(job, run, configs, docs, qa):
                 hits, ms = timed_search(retriever, q["question"], k_max)
                 retrieved = [chunks[i] for i, _ in hits]
                 s = score_question(retrieved, q["evidence"], k_max)
-                per_q.append({"qa_id": q["id"], "latency_ms": ms, **s,
-                              "retrieved": [{"doc_id": c.doc_id, "start": c.start, "end": c.end,
+                gold = gold_chunks(chunks, q["evidence"])
+                per_q.append({"qa_id": q["id"], "latency_ms": ms, **s, "gold": gold,
+                              "ndcg": ndcg(retrieved, q["evidence"], len(gold), min(10, k_max)),
+                              "retrieved": [{"chunk": c.id, "doc_id": c.doc_id, "start": c.start, "end": c.end,
                                              "score": round(sc, 4)} for c, (_, sc) in zip(retrieved, hits)],
                               "_chunks": retrieved})
                 _update(job, done=job["done"] + 1)

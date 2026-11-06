@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
+import { ChunkMap } from "../components/ChunkMap";
 import { Download, Plus, Search, Trash2, Upload } from "lucide-react";
 import { api, errorText, pollJob } from "../api";
 import { useStatus } from "../status";
-import type { Doc, Job, QA } from "../types";
+import type { ChunkCfg, Doc, Job, QA } from "../types";
 import { Empty, ErrorNote, JobProgress, PageHead } from "../components/ui";
 
 type Panel = null | "add" | "generate";
@@ -16,11 +17,23 @@ export function QAPage() {
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [params, setParams] = useSearchParams();
+  const view = params.get("view") === "map" ? "map" : "table";
+  const setView = (v: "table" | "map") => setParams(v === "map" ? { view: "map" } : {}, { replace: true });
+  const [cfg, setCfg] = useState<ChunkCfg>({ strategy: "recursive", size: 400, overlap: 50 });
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const load = () => api.get<QA[]>("/qa").then(setItems).catch((e) => setError(errorText(e)));
+  const load = () =>
+    api.get<QA[]>(`/qa?strategy=${cfg.strategy}&size=${cfg.size}&overlap=${cfg.overlap}`).then(setItems).catch((e) => setError(errorText(e)));
   const reload = () => { load(); refresh(); };
-  useEffect(() => { load(); api.get<Doc[]>("/documents").then(setDocs); }, []);
+  useEffect(() => { api.get<Doc[]>("/documents").then(setDocs); }, []);
+  useEffect(() => {
+    const t = setTimeout(load, 200);
+    return () => clearTimeout(t);
+  }, [cfg.strategy, cfg.size, cfg.overlap]);
+  const docName = (id: string) => docs.find((d) => d.id === id)?.name ?? "";
+  const chunkHref = (docId: string, n: number) =>
+    `/documents/${docId}?strategy=${cfg.strategy}&size=${cfg.size}&overlap=${cfg.overlap}&chunk=${n}`;
 
   async function importFile(f: File) {
     setError(null);
@@ -58,14 +71,21 @@ export function QAPage() {
       {panel === "generate" && <GenerateQA docs={docs} onDone={(m) => { setNote(m); reload(); }} />}
 
       <div className="card">
-        <div className="card-head">
-          <h2>{items ? `${items.length} คำถาม` : "…"}</h2>
+        <div className="card-head" style={{ alignItems: "center" }}>
+          <div className="row" style={{ gap: 16, flexWrap: "wrap" }}>
+            <h2>{items ? `${items.length} คำถาม` : "…"}</h2>
+            <div className="seg">
+              <button className={view === "table" ? "on" : ""} onClick={() => setView("table")}>ตาราง</button>
+              <button className={view === "map" ? "on" : ""} onClick={() => setView("map")}>แผนผัง chunk</button>
+            </div>
+            <ChunkCfgPicker cfg={cfg} onChange={setCfg} />
+          </div>
           <div className="actions">
-            <div style={{ position: "relative" }}>
+            {view === "table" && <div style={{ position: "relative" }}>
               <Search className="icon" style={{ position: "absolute", left: 10, top: 8, color: "var(--muted)" }} />
               <input className="input" style={{ width: 220, height: 32, paddingLeft: 32 }} placeholder="ค้นหา"
                      value={query} onChange={(e) => setQuery(e.target.value)} />
-            </div>
+            </div>}
             {!!items?.length && <button className="btn ghost sm" onClick={clearAll}>ลบทั้งหมด</button>}
           </div>
         </div>
@@ -74,11 +94,12 @@ export function QAPage() {
             <p>นำเข้า CSV ที่มีคอลัมน์ <code>question, answer, evidence, document</code> ให้ LLM สร้างจากเอกสาร หรือโหลดชุดตัวอย่างในหน้าเอกสาร</p>
           </Empty>
         )}
-        {shown.length > 0 && (
+        {view === "map" && !!items?.length && <ChunkMap cfg={cfg} docs={docs} items={items} />}
+        {view === "table" && shown.length > 0 && (
           <div className="table-wrap">
             <table>
               <thead>
-                <tr><th style={{ width: "38%" }}>คำถาม · คำตอบอ้างอิง</th><th>Evidence</th><th>ที่มา</th><th /></tr>
+                <tr><th style={{ width: "34%" }}>คำถาม · คำตอบอ้างอิง</th><th>Evidence</th><th title="chunk ที่ครอบ evidence ตาม config ที่เลือกด้านบน">อยู่ใน chunk</th><th>ที่มา</th><th /></tr>
               </thead>
               <tbody>
                 {shown.map((q) => (
@@ -90,6 +111,15 @@ export function QAPage() {
                     <td className="small" style={{ verticalAlign: "top" }}>
                       <div>{q.evidence_text}</div>
                       <div className="meta" style={{ marginTop: 4 }}>{q.doc_name}</div>
+                    </td>
+                    <td style={{ verticalAlign: "top", whiteSpace: "nowrap" }}>
+                      {q.chunks?.length ? (
+                        <div className="stack-8" style={{ gap: 2 }}>
+                          {q.chunks.map((c) => (
+                            <Link key={c.id} className="mono small" to={chunkHref(c.doc_id, c.number)} title={docName(c.doc_id)}>#{c.number}</Link>
+                          ))}
+                        </div>
+                      ) : <span className="small" style={{ color: "var(--negative)" }} title="ไม่มี chunk ไหนครอบ evidence ได้ครึ่งหนึ่ง">ไม่มี</span>}
                     </td>
                     <td className="meta" style={{ verticalAlign: "top" }}>{q.source}</td>
                     <td className="num" style={{ verticalAlign: "top" }}>
@@ -197,6 +227,22 @@ function GenerateQA({ docs, onDone }: { docs: Doc[]; onDone: (msg: string) => vo
       <div className="actions">
         <button className="btn primary" onClick={start} disabled={!ready || running}>{running ? "กำลังสร้าง" : "สร้างคำถาม"}</button>
       </div>
+    </div>
+  );
+}
+
+function ChunkCfgPicker({ cfg, onChange }: { cfg: ChunkCfg; onChange: (c: ChunkCfg) => void }) {
+  return (
+    <div className="row" title="config ที่ใช้คำนวณว่าคำถามอยู่ใน chunk ไหน">
+      <select className="input" style={{ height: 32, width: 120 }} aria-label="วิธีตัด chunk" value={cfg.strategy}
+              onChange={(e) => onChange({ ...cfg, strategy: e.target.value })}>
+        <option>char</option><option>word</option><option>recursive</option>
+      </select>
+      <input className="input mono" style={{ height: 32, width: 76 }} type="number" min={50} step={50} aria-label="ขนาด"
+             value={cfg.size} onChange={(e) => onChange({ ...cfg, size: Number(e.target.value) })} />
+      <span className="meta">/</span>
+      <input className="input mono" style={{ height: 32, width: 64 }} type="number" min={0} step={10} aria-label="overlap"
+             value={cfg.overlap} onChange={(e) => onChange({ ...cfg, overlap: Number(e.target.value) })} />
     </div>
   );
 }

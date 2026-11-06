@@ -14,9 +14,14 @@ interface Props {
   lead: number;
   focus: number | null;
   onFocus: (i: number) => void;
+  /** indices to draw; the rest are left out to keep the chart readable */
+  show?: number[];
 }
 
-export function HitCurve({ results, kMax, lead, focus, onFocus }: Props) {
+export function HitCurve({ results, kMax, lead, focus, onFocus, show }: Props) {
+  const visible = new Set(show ?? results.map((_, i) => i));
+  visible.add(lead);
+  if (focus != null) visible.add(focus);
   const ref = useRef<SVGSVGElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const [hoverK, setHoverK] = useState<number | null>(null);
@@ -34,14 +39,14 @@ export function HitCurve({ results, kMax, lead, focus, onFocus }: Props) {
   const hit = (r: Result, k: number) => r.metrics[`hit@${k}`] ?? 0;
 
   // Start the scale just below the weakest Hit@1 so the curves use the full height.
-  const low = Math.min(...results.map((r) => hit(r, 1)));
+  const low = Math.min(...results.filter((_, i) => visible.has(i)).map((r) => hit(r, 1)));
   const y0 = Math.max(0, Math.floor((low - 0.05) * 10) / 10);
   const ks = Array.from({ length: kMax }, (_, i) => i + 1);
   const x = (k: number) => M.l + (kMax === 1 ? iw / 2 : ((k - 1) / (kMax - 1)) * iw);
   const y = (v: number) => M.t + (1 - (v - y0) / (1 - y0)) * ih;
   const yTicks = Array.from({ length: Math.round((1 - y0) / 0.1) + 1 }, (_, i) => +(y0 + i * 0.1).toFixed(2));
 
-  const order = results.map((_, i) => i).filter((i) => i !== lead && i !== focus);
+  const order = results.map((_, i) => i).filter((i) => visible.has(i) && i !== lead && i !== focus);
   if (focus != null && focus !== lead) order.push(focus);
   order.push(lead);
 
@@ -59,7 +64,7 @@ export function HitCurve({ results, kMax, lead, focus, onFocus }: Props) {
   const path = (r: Result) => ks.map((k) => `${x(k)},${y(hit(r, k))}`).join(" ");
 
   const tipRows = hoverK
-    ? results.map((r, i) => ({ i, label: r.label, v: hit(r, hoverK) })).sort((a, b) => b.v - a.v)
+    ? results.map((r, i) => ({ i, label: r.label, v: hit(r, hoverK) })).filter((r) => visible.has(r.i)).sort((a, b) => b.v - a.v)
     : [];
   const shown = tipRows.slice(0, 5);
   if (focus != null && hoverK && !shown.some((r) => r.i === focus)) shown.push(tipRows.find((r) => r.i === focus)!);

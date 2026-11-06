@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Trash2, Upload } from "lucide-react";
 import { api, errorText } from "../api";
 import { useStatus } from "../status";
@@ -96,8 +96,19 @@ const STRATEGY_LABEL: Record<string, string> = {
 };
 
 function ChunkPreviewCard({ id }: { id: string }) {
+  // Links from the QA page carry their chunking config and the chunk to highlight.
+  const [params] = useSearchParams();
+  const target = Number(params.get("chunk")) || null;
   const [doc, setDoc] = useState<DocFull | null>(null);
-  const [cfg, setCfg] = useState({ strategy: "char", size: 400, overlap: 0 });
+  const [cfg, setCfg] = useState({
+    strategy: params.get("strategy") ?? "char",
+    size: Number(params.get("size")) || 400,
+    overlap: Number(params.get("overlap") ?? 0),
+  });
+  useEffect(() => {
+    if (!target || !res) return;
+    document.getElementById(`chunk-${target}`)?.scrollIntoView({ block: "center" });
+  });
   const [res, setRes] = useState<ChunkPreview | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -167,11 +178,11 @@ function ChunkPreviewCard({ id }: { id: string }) {
         <div className="page-text">
           {parts.map((p) =>
             p.mark ? (
-              <span key={p.key} className={"grad" + (p.mark.cut ? " cut" : "")} title={p.mark.cut ? `chunk ${p.mark.n} เริ่มกลางคำ` : `chunk ${p.mark.n}`}>
+              <span key={p.key} id={`chunk-${p.mark.n}`} className={"grad" + (p.mark.cut ? " cut" : "") + (p.mark.n === target ? " target" : "")} title={p.mark.cut ? `chunk ${p.mark.n} เริ่มกลางคำ` : `chunk ${p.mark.n}`}>
                 <b>{p.mark.n}</b>
               </span>
             ) : p.chunk != null ? (
-              <span key={p.key} className={"c " + (p.chunk % 2 ? "b" : "a")}>{p.text}</span>
+              <span key={p.key} className={"c " + (p.chunk % 2 ? "b" : "a") + (p.chunk + 1 === target ? " target" : "")}>{p.text}</span>
             ) : (
               <span key={p.key}>{p.text}</span>
             ),

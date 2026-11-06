@@ -39,6 +39,8 @@ export interface QA {
   source: string;
   doc_name: string | null;
   evidence_text: string;
+  /** chunks the evidence falls in, for the chunking config the list was requested with */
+  chunks?: { id: string; doc_id: string; number: number }[];
 }
 
 export type Provider = "anthropic" | "openai";
@@ -106,7 +108,9 @@ export interface PerQuestion {
   latency_ms: number;
   hit_rank: number | null;
   coverage: Record<string, number>;
-  retrieved: (Span & { score: number })[];
+  /** ids ("<doc_id>:<index>") of the chunks that contain the answer under this config */
+  gold?: string[];
+  retrieved: (Span & { score: number; chunk?: string })[];
   answer?: string;
   gen_latency_ms?: number;
   judge?: Judge;

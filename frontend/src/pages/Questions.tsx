@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import type { DocFull, Result, Run, Span } from "../types";
-import { ms } from "../format";
+import { chunkNo, ms } from "../format";
 import { CfgLabel, Empty } from "../components/ui";
 import { RankRuler } from "../components/Ruler";
 
@@ -56,6 +56,13 @@ export function Questions({ run, result }: { run: Run; result: Result }) {
             {isOpen && (
               <div className="q-detail">
                 <div className="small"><span className="muted">คำตอบอ้างอิง</span> {q.answer}</div>
+                {p.gold && (
+                  <div className="small">
+                    <span className="muted">คำตอบอยู่ใน</span>{" "}
+                    {p.gold.length ? p.gold.map((g) => <span key={g} className="mono" style={{ marginRight: 8 }}>chunk {chunkNo(g)}</span>)
+                      : <span style={{ color: "var(--negative)" }}>ไม่มี chunk ไหนครอบ evidence ได้ครึ่งหนึ่ง (chunk เล็กเกินไป?)</span>}
+                  </div>
+                )}
                 {q.evidence.map((ev, i) => (
                   <div key={i} className="small">
                     <div className="muted">Evidence · {run.doc_names[ev.doc_id]}</div>
@@ -66,7 +73,7 @@ export function Questions({ run, result }: { run: Run; result: Result }) {
                   {p.retrieved.slice(0, 5).map((c, i) => (
                     <div key={i} className={"hit-row" + (p.hit_rank === i + 1 ? " is-hit" : "")}>
                       <span className="mono muted">#{i + 1}</span>
-                      <span>{snippet(c)}</span>
+                      <span>{c.chunk && <span className="mono muted" style={{ marginRight: 8 }}>chunk {chunkNo(c.chunk)}{p.gold?.includes(c.chunk) ? " · มีคำตอบ" : ""}</span>}{snippet(c)}</span>
                       <span className="num muted">{c.score.toFixed(3)}</span>
                     </div>
                   ))}
