@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import type { DocFull, Result, Run, Span } from "../types";
-import { chunkNo, ms } from "../format";
+import { chunkNo } from "../format";
 import { CfgLabel, Empty } from "../components/ui";
 import { RankRuler } from "../components/Ruler";
 
@@ -50,7 +50,6 @@ export function Questions({ run, result }: { run: Run; result: Result }) {
               <span style={{ color: "var(--text)" }}>{q.question}</span>
               <RankRuler rank={p.hit_rank} k={kMax} />
               <span className="num small" style={{ color: p.hit_rank ? "var(--text)" : "var(--negative)" }}>{p.hit_rank ? `#${p.hit_rank}` : "ไม่เจอ"}</span>
-              <span className="num small muted hide-sm">{ms(p.latency_ms)}</span>
               <span className={"verdict hide-sm " + (p.judge?.verdict ?? "")}>{p.judge?.verdict ?? ""}</span>
             </div>
             {isOpen && (

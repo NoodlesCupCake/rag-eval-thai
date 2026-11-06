@@ -65,9 +65,9 @@ export function ResultsView({ results, kMax, focus, setFocus, baseline, setBasel
     { key: "k@95", label: "อันดับ p95", fmt: (v) => (v == null ? `> ${kMax}` : String(v)), lowerIsBetter: true, delta: "count" } as Col,
     { key: "ctx@95", label: "context p95", extra: true, fmt: (v) => (v == null ? "–" : Math.round(v).toLocaleString("th-TH")), lowerIsBetter: true, delta: "count" } as Col,
     { key: "coverage@3", label: "Coverage@3", fmt: p, extra: true, delta: "pt" } as Col,
-    { key: "latency_p50_ms", label: "p50", fmt: ms, lowerIsBetter: true, delta: "ms" } as Col,
+    { key: "latency_p50_ms", label: "p50", fmt: ms, lowerIsBetter: true, extra: true, delta: "ms" } as Col,
     { key: "latency_p90_ms", label: "p90", fmt: ms, lowerIsBetter: true, extra: true, delta: "ms" } as Col,
-    { key: "latency_p95_ms", label: "p95", fmt: ms, lowerIsBetter: true, delta: "ms" } as Col,
+    { key: "latency_p95_ms", label: "p95", fmt: ms, lowerIsBetter: true, extra: true, delta: "ms" } as Col,
     { key: "latency_p99_ms", label: "p99", fmt: ms, lowerIsBetter: true, extra: true, delta: "ms" } as Col,
     ...(hasGen ? [
       { key: "answer_correctness", label: "ตอบถูก", fmt: p, delta: "pt" } as Col,
@@ -123,24 +123,14 @@ export function ResultsView({ results, kMax, focus, setFocus, baseline, setBasel
         </div>
       </div>
 
-      <EmbeddingTable results={R} kMax={kMax} />
-
-      <div className="card">
-        <div className="card-head">
-          <h2><Term k="latency">Latency การค้นหา</Term></h2>
-          <span className="hint">เรียงจากเร็วไปช้าตาม p95 · แกนตั้งเป็น log</span>
-        </div>
-        <div className="card-pad">
-          <LatencyChart results={R} lead={lead} focus={f !== lead ? f : null} onFocus={setFocus} />
-        </div>
-      </div>
+      <EmbeddingTable results={R} kMax={kMax} showSpeed={extra} />
 
       <div className="card">
         <div className="card-head">
           <h2>เทียบทุก config</h2>
           <div className="row" style={{ gap: 12 }}>
             {base && <span className="hint">เทียบกับ baseline <CfgLabel label={base.label} /></span>}
-            <button className="btn ghost sm" onClick={() => setExtra(!extra)}>{extra ? "ซ่อนค่าเพิ่มเติม" : "แสดงเพิ่ม"}</button>
+            <button className="btn ghost sm" onClick={() => setExtra(!extra)}>{extra ? "ซ่อนค่าเพิ่มเติม" : "แสดงเพิ่ม · coverage, latency"}</button>
           </div>
         </div>
         <div className="table-wrap">
@@ -184,6 +174,18 @@ export function ResultsView({ results, kMax, focus, setFocus, baseline, setBasel
           </table>
         </div>
       </div>
+
+      {extra && (
+        <div className="card">
+          <div className="card-head">
+            <h2><Term k="latency">Latency การค้นหา</Term></h2>
+            <span className="hint">เวลาค้น chunk ต่อคำถาม ไม่รวม LLM · เรียงจากเร็วไปช้าตาม p95 · แกนตั้งเป็น log</span>
+          </div>
+          <div className="card-pad">
+            <LatencyChart results={R} lead={lead} focus={f !== lead ? f : null} onFocus={setFocus} />
+          </div>
+        </div>
+      )}
     </>
   );
 }
